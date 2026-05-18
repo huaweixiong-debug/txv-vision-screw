@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python -c \"import socket; s=socket.socket\\(\\); s.settimeout\\(1\\); r=s.connect_ex\\(\\('127.0.0.1',8010\\)\\); s.close\\(\\); print\\('PORT_IN_USE' if r==0 else 'PORT_FREE'\\)\")",
+      "Bash(ping -n 2 192.168.0.105)",
+      "Bash(ipconfig)",
+      "Bash(where tailscale *)",
+      "Bash(ssh-keygen -R 100.79.19.71)",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new administrator@100.79.19.71 \"echo connected && ipconfig | findstr 192.168\")",
+      "Bash(Test-WSMan -ComputerName 100.79.19.71 -ErrorAction SilentlyContinue)",
+      "Bash(where sshpass *)",
+      "Bash(python tools\\\\remote_test_kilews.py)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python tools/_deploy_hmi.py)",
+      "Bash(python -m py_compile app\\\\workflow.py)",
+      "Bash(python -m py_compile app\\\\hardware\\\\scanner.py)",
+      "Bash(python -m py_compile S:/expansion_valve_hmi/app/workflow.py)",
+      "Bash(python -m py_compile S:/expansion_valve_hmi/app/hardware/scanner.py)"
+    ]
+  }
+}

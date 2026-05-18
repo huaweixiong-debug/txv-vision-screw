@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "S:\expansion_valve_hmi\run.py", line 1, in <module>
+    from app.main import main
+  File "S:\expansion_valve_hmi\app\main.py", line 18, in <module>
+    from .storage import ProductionStorage, today_text
+  File "S:\expansion_valve_hmi\app\storage.py", line 131
+    )
+    ^
+SyntaxError: unmatched ')'

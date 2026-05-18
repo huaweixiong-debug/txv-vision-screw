@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hmi-server",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-u", "S:\\expansion_valve_hmi\\run.py", "--host", "0.0.0.0", "--port", "8010"],
+      "port": 8010
+    }
+  ]
+}

@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>膨胀阀拧紧防错追溯 HMI</title>
+    <link rel="stylesheet" href="/styles.css?v=20260515i" />
+  </head>
+  <body>
+    <div class="shell">
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-brand">
+            <div class="brand-mark">EV</div>
+            <div>
+              <p class="eyebrow">Windows IPC Local Web HMI</p>
+              <h1>膨胀阀拧紧防错追溯</h1>
+            </div>
+          </div>
+          <nav class="tab-strip" role="tablist">
+            <button class="tab-btn active" data-tab="production">生产</button>
+            <button class="tab-btn" data-tab="settings">设置</button>
+            <button class="tab-btn" data-tab="records">数据</button>
+            <button class="tab-btn" data-tab="datasets">训练数据</button>
+          </nav>
+          <div class="top-actions">
+            <span id="autoBadge" class="badge warn">手动模式</span>
+            <span id="autoStageLabel" style="font-size:0.72rem;color:var(--muted);">自动化未运行</span>
+            <span class="badge" id="autoPlcBadge">PLC: --</span>
+            <span id="scannerBadge" class="badge">扫码枪: --</span>
+            <span id="connectionBadge" class="badge good">本机在线</span>
+            <span id="clock" class="clock">--:--:--</span>
+          </div>
+        </header>
+
+        <section id="production" class="tab-panel active production-board">
+          <div class="hero-grid production-summary">
+            <article class="hero-card">
+              <div class="hero-line">
+                <span>当前步骤</span>
+                <strong id="stateLabel">待开始</strong>
+              </div>
+              <div class="step-track" id="stepTrack">
+                <span data-step="vision_wait_stable">O型圈</span>
+                <span data-step="vision_check_cover">膨胀阀</span>
+                <span data-step="plc_handshake">压紧</span>
+                <span data-step="tightening_wait">拧紧</span>
+                <span data-step="tightening_eval">判定</span>
+                <span data-step="pending_scan">扫码</span>
+                <span data-step="complete">完成</span>
+              </div>
+              <p id="alarmText" class="alarm-text">无报警</p>
+            </article>
+            <article class="metric-card">
+              <span>内部序列号</span>
+              <strong id="serialText">--</strong>
+              <small id="qrText">二维码：待绑定</small>
+            </article>
+            <article class="metric-card">
+              <span>产品/配方</span>
+              <strong id="productText">HB11 / 1</strong>
+              <small id="recipeText">扭矩 -- / 角度 --</small>
+            </article>
+          </div>
+
+          <section class="panel operator-panel">
+            <div class="panel-head" data-drag-handle>
+              <h2>操作员与流程</h2>
+              <span id="operatorBadge" class="badge">未登录</span>
+            </div>
+            <div class="operator-grid">
+              <label>产品型号<select id="productSelect"></select></label>
+              <label>操作员<select id="operatorInput"></select></label>
+            </div>
+            <span class="resize-grip"></span>
+          </section>
+
+          <section class="panel camera-panel">
+            <div class="panel-head" data-drag-handle>
+              <h2>O 型圈视觉</h2>
+              <span id="visionBadge" class="badge">WAIT</span>
+            </div>
+            <div class="vision-stage">
+              <div class="camera-box">
+                <img id="cameraFeed" src="" alt="" />
+              </div>
+              <div class="vision-insight">
+                <div id="visionDetections" style="overflow-y:auto;flex:1;">
+                  <span style="color:var(--muted);font-size:0.72rem;">等待检测...</span>
+                </div>
+              </div>
+            </div>
+            <span class="resize-grip"></span>
+          </section>
+
+          <section class="panel plc-panel">
+            <div class="panel-head" data-drag-handle>
+              <h2>PLC 条件</h2>
+              <span id="plcReadyBadge" class="badge">检查中</span>
+            </div>
+            <div id="plcConnectionRow" style="display:flex;gap:0.5rem;align-items:center;padding:0.2rem 0.4rem;font-size:0.72rem;border-bottom:1px solid var(--border);margin-bottom:0.3rem;">
+              <span>PLC <strong id="plcConnText">--</strong></span>
+              <button id="plcConnectBtn" class="secondary" style="font-size:0.68rem;padding:0.12rem 0.4rem;">连接</button>
+              <button id="plcDisconnectBtn" class="ghost-danger" style="font-size:0.68rem;padding:0.12rem 0.4rem;">断开</button>
+            </div>
+            <div id="plcMBitsGrid" class="plc-grid"></div>
+            <span class="resize-grip"></span>
+          </section>
+
+          <section class="panel tightening-panel">
+            <div class="panel-head" data-drag-handle>
+              <h2>奇力速拧紧</h2>
+              <div style="display:flex;gap:0.3rem;align-items:center;">
+                <span id="kilewsConnBadge" class="badge">--</span>
+                <span id="permissionBadge" class="badge">未许可</span>
+              </div>
+            </div>
+            <div id="boltCards" class="bolt-grid"></div>
+            <div id="kilewsLiveStatus" style="margin-top:0.4rem;font-size:0.78rem;color:var(--muted);border-top:1px solid var(--border);padding-top:0.4rem;">
+              <span>作业 <strong id="kilewsLiveJob">--</strong></span>
+              <span style="margin-left:0.6rem">扭矩 <strong id="kilewsLiveTorque">--</strong></span>
+              <span style="margin-left:0.6rem">角度 <strong id="kilewsLiveAngle">--</strong></span>
+              <span style="margin-left:0.6rem">结果 <strong id="kilewsLiveResult">--</strong></span>
+            </div>
+            <span class="resize-grip"></span>
+          </section>
+
+          <section class="panel scan-panel">
+            <div class="panel-head" data-drag-handle>
+              <h2>流程结束扫码绑定</h2>
+              <span id="scanBadge" class="badge">待流程结束</span>
+            </div>
+            <div id="scannerLiveBar" style="display:none;align-items:center;gap:0.4rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;border-radius:6px;background:#1a2a1a;font-size:0.78rem;font-family:Consolas,monospace;">
+              <span style="color:#4f4;">▸</span>
+              <span id="scannerLiveCode" style="color:#0f0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+              <span id="scannerLiveTime" style="color:#888;flex-shrink:0;"></span>
+            </div>
+            <div class="form-row">
+              <label>二维码<input id="qrInput" placeholder="扫码枪自动填入" /></label>
+              <button id="scanBtn" class="primary">绑定二维码</button>
+              <button id="reworkBtn" class="secondary">PLC 选择返修后继续扫码</button>
+            </div>
+            <div id="scannerHistory" style="display:none;margin-top:0.3rem;max-height:120px;overflow-y:auto;border-top:1px solid var(--border);padding-top:0.3rem;">
+              <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.2rem;">扫码记录</div>
+              <div id="scannerHistoryItems"></div>
+            </div>
+            <span class="resize-grip"></span>
+          </section>
+
+          <section class="panel recent-panel">
+            <div class="panel-head" data-drag-handle>
+              <h2>当日记录</h2>
+              <button id="refreshBtn" class="secondary">刷新</button>
+            </div>
+            <div id="todayStats" style="display:flex;gap:0.8rem;padding:0.25rem 0.4rem;font-size:0.72rem;border-bottom:1px solid var(--border);">
+              <span>合计: <strong id="statTotal">--</strong></span>
+              <span id="statProduct" style="display:none;"><strong id="statProductLabel">--</strong>: <strong id="statProductTotal">--</strong></span>
+              <span>合格: <strong id="statOk" style="color:var(--green);">--</strong></span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>序列号</th>
+                    <th>二维码</th>
+                    <th>型号</th>
+                    <th>螺栓1扭矩</th>
+                    <th>螺栓1角度</th>
+                    <th>螺栓2扭矩</th>
+                    <th>螺栓2角度</th>
+                    <th>结果</th>
+                  </tr>
+                </thead>
+                <tbody id="recentRecords"></tbody>
+              </table>
+            </div>
+            <span class="resize-grip"></span>
+          </section>
+        </section>
+
+        <section id="settings" class="tab-panel settings-page">
+          <section class="panel settings-shell">
+            <div class="panel-head settings-header">
+              <div>
+                <h2>设置</h2>
+              </div>
+              <button id="saveSettingsBtn" class="primary">保存设置</button>
+            </div>
+
+            <div class="settings-subnav" role="tablist" aria-label="设置分组">
+              <button class="settings-subtab" data-settings-tab="hardware">硬件设置</button>
+              <button class="settings-subtab active" data-settings-tab="production">生产设置</button>
+            </div>
+
+            <div id="settings-hardware" class="settings-subpanel">
+              <section class="panel settings-card">
+                <div class="panel-head compact-head">
+                  <div>
+                    <h2>视觉与相机</h2>
+                    <p class="muted">模型、相机地址、推理节拍。</p>
+                  </div>
+                </div>
+                <div class="settings-grid compact six">
+                  <label>YOLO 模型路径<input id="setModelPath" /></label>
+                  <label>相机 IP<input id="setCameraIp" /></label>
+                  <label>置信度阈值<input id="setConfidenceThreshold" type="number" step="0.05" min="0" max="1" /></label>
+                  <label>推理间隔 ms<input id="setInferenceIntervalMs" type="number" min="100" max="5000" /></label>
+                  <label class="checkbox-line"><input type="checkbox" id="setInferenceEnabled" /> 启用 YOLO 推理</label>
+                  <label class="checkbox-line"><input type="checkbox" id="setAutoCaptureEnabled" /> 自动抓拍</label>
+                </div>
+              </section>
+
+              <section class="panel settings-card">
+                <div class="panel-head compact-head">
+                  <div>
+                    <h2>PLC</h2>
+                    <p class="muted">PLC 通讯地址与心跳超时。</p>
+                  </div>
+                </div>
+                <div class="settings-grid compact six">
+                  <label>PLC IP<input id="setPlcIp" /></label>
+                  <label>PLC 端口<input id="setPlcPort" type="number" /></label>
+                  <label>Rack<input id="setPlcRack" type="number" min="0" max="31" /></label>
+                  <label>Slot<input id="setPlcSlot" type="number" min="0" max="31" /></label>
+                  <label>超时 s<input id="setPlcTimeout" type="number" step="0.5" /></label>
+                  <label>重连间隔 s<input id="setPlcReconnect" type="number" step="0.5" /></label>
+                  <label class="checkbox-line"><input type="checkbox" id="setPlcEnabled" /> 启用真实PLC</label>
+                  <label class="checkbox-line"><input type="checkbox" id="setPlcAutoConnect" /> 自动连接</label>
+                </div>
+              </section>
+
+              <section class="panel settings-card">
+                <div class="panel-head compact-head">
+                  <div>
+                    <h2>自动化参数</h2>
+                    <p class="muted">稳定性检测、覆盖检测与拧紧超时。</p>
+                  </div>
+                  <label class="checkbox-line"><input type="checkbox" id="setAutomationEnabled" /> 启用自动化</label>
+                </div>
+                <div class="settings-grid compact six">
+                  <label>稳定时长 s<input id="setStabilityDuration" type="number" step="0.1" min="0.5" max="10" /></label>
+                  <label>位移阈值 px<input id="setStabilityThreshold" type="number" min="5" max="200" /></label>
+                  <label>覆盖率阈值<input id="setCoverageThreshold" type="number" step="0.01" min="0.5" max="1" /></label>
+                  <label>拧紧轮询 ms<input id="setTighteningPoll" type="number" min="100" max="5000" /></label>
+                  <label>拧紧超时 s<input id="setTighteningTimeout" type="number" step="0.5" min="5" max="120" /></label>
+                </div>
+              </section>
+
+              <section class="panel settings-card">
+                <div class="panel-head compact-head">
+                  <div>
+                    <h2>奇力速与扫码枪</h2>
+                    <p class="muted">控制器、扫码枪与联机操作。</p>
+                  </div>
+                </div>
+                <div class="settings-grid compact six">
+                  <label>奇力速 IP<input id="setKilewsIp" /></label>
+                  <label>奇力速端口<input id="setKilewsPort" type="number" /></label>
+                  <label>Unit ID<input id="setKilewsUnitId" type="number" min="1" max="247" /></label>
+                  <label>转速 RPM<input id="setKilewsSpeed" type="number" min="1" max="3000" /></label>
+                  <label>扫码枪模式<input id="setScannerMode" /></label>
+                  <label>扫码枪端口<input id="setScannerPort" type="number" /></label>
+                  <label class="checkbox-line"><input type="checkbox" id="setKilewsEnabled" /> 启用奇力速</label>
+                  <label class="checkbox-line"><input type="checkbox" id="setKilewsAutoConnect" /> 自动连接</label>
+                </div>
+                <div class="settings-actions">
+                  <button id="kilewsConnectBtn" class="secondary">连接控制器</button>
+                  <button id="kilewsDisconnectBtn" class="danger">断开</button>
+                  <button id="kilewsWriteBtn" class="warn">测试写入</button>
+                  <span id="kilewsConnMsg" class="muted"></span>
+                </div>
+              </section>
+            </div>
+
+            <div id="settings-production" class="settings-subpanel active">
+              <section class="panel settings-card">
+                <div class="panel-head compact-head">
+                  <div>
+                    <h2>工位与数据</h2>
+                  </div>
+                </div>
+                <div class="settings-grid compact six">
+                  <label>工位号<input id="setStationId" /></label>
+                  <label>产线名称<input id="setLineName" /></label>
+                  <label>日报导出目录<input id="setExportRoot" /></label>
+                  <label>图片目录<input id="setImageRoot" /></label>
+                  <label>datasets 目录<input id="setDatasetRoot" /></label>
+                </div>
+              </section>
+
+              <div class="settings-table-grid">
+                <section class="panel settings-card table-card">
+                  <div class="panel-head compact-head">
+                    <div>
+                      <h2>产品设置</h2>
+                    </div>
+                    <button id="addProductBtn" class="secondary">添加产品</button>
+                  </div>
+                  <div class="config-stack product-config-table" id="productRows"></div>
+                </section>
+
+                <section class="panel settings-card table-card">
+                  <div class="panel-head compact-head">
+                    <div>
+                      <h2>人员设置</h2>
+                    </div>
+                    <button id="addPersonBtn" class="secondary">添加人员</button>
+                  </div>
+                  <div class="config-stack person-config-table" id="personRows"></div>
+                </section>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="records" class="tab-panel">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>数据查询与日报</h2>
+              <button id="exportDailyBtn" class="primary">导出今日 Excel</button>
+            </div>
+            <div class="form-row">
+              <label>关键字<input id="recordKeyword" placeholder="序列号 / 二维码 / 操作员" /></label>
+              <label>状态<select id="recordStatus"><option value="">全部</option><option>RUNNING</option><option>WAIT_QR</option><option>COMPLETED</option><option>NG_WAIT_REWORK</option></select></label>
+              <button id="queryRecordsBtn" class="secondary">查询</button>
+            </div>
+            <p id="exportPath" class="muted"></p>
+            <div class="table-wrap tall">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>序列号</th>
+                    <th>二维码</th>
+                    <th>产品型号</th>
+                    <th>O型圈图片</th>
+                    <th>螺丝1扭矩</th>
+                    <th>螺丝1角度</th>
+                    <th>螺丝2扭矩</th>
+                    <th>螺丝2角度</th>
+                    <th>结果</th>
+                  </tr>
+                </thead>
+                <tbody id="recordRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="datasets" class="tab-panel">
+          <div class="panel-grid two datasets-grid">
+            <section class="panel datasets-capture-panel">
+              <div class="panel-head">
+                <h2>抓拍</h2>
+                <div style="display:flex;gap:0.3rem;align-items:center;">
+                  <button id="cameraConnectBtn" class="secondary" style="font-size:0.72rem;padding:0.15rem 0.45rem;">启动相机</button>
+                  <button id="cameraDisconnectBtn" class="ghost-danger" style="font-size:0.72rem;padding:0.15rem 0.45rem;">断开</button>
+                  <span id="captureCameraBadge" class="badge">本地图像采集</span>
+                </div>
+              </div>
+              <div class="datasets-camera-box">
+                <img id="datasetsCameraFeed" src="" alt="" />
+                <div class="datasets-transform-badge" id="transformBadge" style="display:none;"></div>
+              </div>
+              <div class="datasets-exposure-bar">
+                <span class="exposure-label">曝光</span>
+                <input id="exposureSlider" type="range" min="28" max="1000000" value="10000" step="1" />
+                <span id="exposureValue" class="exposure-value">10000 us</span>
+                <button id="exposureResetBtn" class="secondary mini" title="重置默认">默认</button>
+              </div>
+              <div class="datasets-transform-bar">
+                <div class="transform-group">
+                  <span class="transform-label">画面</span>
+                  <button id="zoomInBtn" class="mini" title="放大">+</button>
+                  <button id="zoomOutBtn" class="mini" title="缩小">-</button>
+                  <button id="zoomResetBtn" class="mini" title="重置缩放">1:1</button>
+                </div>
+                <div class="transform-group">
+                  <button id="rotateLeftBtn" class="mini" title="左转90">↺</button>
+                  <button id="rotateRightBtn" class="mini" title="右转90">↻</button>
+                  <button id="rotateResetBtn" class="mini" title="重置旋转">↕</button>
+                </div>
+                <div class="transform-group">
+                  <button id="panUpBtn" class="mini" title="上移">↑</button>
+                  <button id="panDownBtn" class="mini" title="下移">↓</button>
+                  <button id="panLeftBtn" class="mini" title="左移">←</button>
+                  <button id="panRightBtn" class="mini" title="右移">→</button>
+                  <button id="panResetBtn" class="mini" title="重置平移">⊙</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.25rem;">
+                <button id="saveCameraSettingsBtn" class="primary" style="font-size:0.78rem;padding:0.28rem 0.7rem;">保存相机设置</button>
+                <span id="cameraSettingsSaved" style="font-size:0.7rem;color:var(--muted);display:none;">已保存</span>
+              </div>
+              <button id="captureBtn" class="primary" style="width:100%;margin:0 0 0.4rem;">抓拍</button>
+              <p id="capturePath" class="muted"></p>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>生成 datasets</h2>
+                <button id="exportDatasetBtn" class="primary">生成本地 YOLO datasets</button>
+              </div>
+              <p>使用已选模型对抓拍图片进行推理自动标注，生成 <code>train/valid/test</code> 目录和 <code>data.yaml</code>。若模型文件不存在则生成空标注，上传 Roboflow 完成标注后导出 <code>best.pt</code>。</p>
+              <p id="datasetPath" class="muted"></p>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script src="/app.js?v=20260515i"></script>
+  </body>
+</html>

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>扫码枪测试</title>
+  <style>
+    :root {
+      --ink: #10212b;
+      --muted: #6b7a84;
+      --green: #2f7d4f;
+      --red: #b7382f;
+      --paper: #f5f7f3;
+      --card: rgba(255,255,255,0.95);
+      --shadow: 0 8px 30px rgba(20,45,54,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      font-family: "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(135deg, #eef2e8 0%, #f7f2e8 55%, #e9f1ed 100%);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 2.5rem;
+      max-width: 560px;
+      width: 90%;
+      text-align: center;
+    }
+    h1 { margin: 0 0 0.3rem; font-size: 1.5rem; }
+    .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 1.8rem; }
+    .status {
+      display: inline-block;
+      padding: 0.25rem 0.7rem;
+      border-radius: 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      margin-bottom: 1.2rem;
+    }
+    .status.ok { background: #d4edda; color: var(--green); }
+    .status.err { background: #f8d7da; color: var(--red); }
+    .result-box {
+      background: #1a1a2e;
+      color: #0f0;
+      border-radius: 12px;
+      padding: 1.2rem;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 0.9rem;
+      min-height: 60px;
+      text-align: left;
+      word-break: break-all;
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+    .result-box .dim { color: #666; }
+    .list { text-align: left; margin-top: 1.2rem; }
+    .list h3 { font-size: 0.9rem; margin: 0 0 0.5rem; color: var(--muted); }
+    .list-item {
+      display: flex; justify-content: space-between;
+      padding: 0.35rem 0;
+      border-bottom: 1px solid #eee;
+      font-size: 0.85rem;
+    }
+    .list-item .code { font-family: "Consolas", monospace; color: var(--ink); }
+    .list-item .time { color: var(--muted); }
+    .hint {
+      margin-top: 1.5rem;
+      font-size: 1.05rem;
+      color: var(--muted);
+    }
+    .hint strong { color: var(--ink); }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>扫码枪通讯测试</h1>
+  <p class="sub">扫描条码 → HMI 串口读取 → 本页显示</p>
+  <div class="status" id="statusBadge">检查中...</div>
+  <div class="result-box" id="resultBox">
+    <span class="dim">等待扫码枪数据...<br>请扫描任意条码</span>
+  </div>
+  <div class="list" id="historyList" style="display:none;">
+    <h3>扫码记录</h3>
+    <div id="historyItems"></div>
+  </div>
+  <p class="hint" id="hintText">
+    状态: <strong id="connState">--</strong>
+  </p>
+</div>
+
+<script>
+const BOX = document.getElementById("resultBox");
+const BADGE = document.getElementById("statusBadge");
+const HINT = document.getElementById("connState");
+const HISTORY = document.getElementById("historyList");
+const HISTORY_ITEMS = document.getElementById("historyItems");
+
+let lastQr = "";
+let scans = [];
+
+async function check() {
+  try {
+    // Check HMI API health
+    let resp = await fetch("/api/health");
+    let health = await resp.json();
+    if (!health.ok) throw new Error("HMI not ok");
+
+    // Get status to read last_qr
+    resp = await fetch("/api/status");
+    let status = await resp.json();
+    let qr = status.last_qr || "";
+    let scanner = status.settings_summary || {};
+
+    // Get settings for scanner config
+    resp = await fetch("/api/settings");
+    let settings = await resp.json();
+    let scfg = settings.scanner || {};
+
+    HINT.textContent = `串口 ${scfg.com_port || "COM3"} @ ${scfg.baudrate || 115200} | HMI 在线`;
+    BADGE.textContent = "就绪 — 请扫码";
+    BADGE.className = "status ok";
+
+    // Check if new scan arrived
+    if (qr && qr !== lastQr) {
+      lastQr = qr;
+      let now = new Date().toLocaleTimeString();
+      scans.unshift({ code: qr, time: now });
+      if (scans.length > 20) scans.pop();
+
+      BOX.innerHTML = `<div style="font-size:1.2rem;color:#0f0;">▸ ${escapeHtml(qr)}</div>
+        <div style="color:#888;margin-top:0.3rem;">${now} | 长度: ${qr.length} 字符</div>`;
+
+      // Render history
+      HISTORY.style.display = "block";
+      HISTORY_ITEMS.innerHTML = scans.map(s =>
+        `<div class="list-item">
+          <span class="code">${escapeHtml(s.code)}</span>
+          <span class="time">${s.time}</span>
+        </div>`
+      ).join("");
+    }
+  } catch(e) {
+    BADGE.textContent = "HMI 离线或未响应";
+    BADGE.className = "status err";
+    HINT.textContent = "错误: " + e.message;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// Poll every 500ms
+setInterval(check, 500);
+check();
+</script>
+</body>
+</html>
