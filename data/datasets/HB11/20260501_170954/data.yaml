@@ -1,0 +1,9 @@
+path: //100.82.136.106/Work/富奥华启（长春）/001 膨胀阀自动装配机/奇力速拧紧枪/expansion_valve_hmi/data/datasets/HB11/20260501_170954
+train: train/images
+val: valid/images
+test: test/images
+nc: 3
+names:
+  0: o_ring
+  1: expansion_valve
+  2: bolt
