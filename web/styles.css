@@ -471,7 +471,8 @@ h2 {
   padding: 0.52rem 0.56rem;
 }
 
-.operator-panel .panel-head {
+.operator-panel .panel-head,
+.plc-panel .panel-head {
   justify-content: center;
 }
 
