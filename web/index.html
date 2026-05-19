@@ -65,7 +65,7 @@
 
           <section class="panel operator-panel">
             <div class="panel-head" data-drag-handle>
-              <h2>操作员与流程</h2>
+              <h2>产品与操作员选择</h2>
             </div>
             <div class="operator-grid">
               <label>产品型号<select id="productSelect"></select></label>
@@ -96,12 +96,6 @@
           <section class="panel plc-panel">
             <div class="panel-head" data-drag-handle>
               <h2>PLC 条件</h2>
-              <span id="plcReadyBadge" class="badge">检查中</span>
-            </div>
-            <div id="plcConnectionRow" style="display:flex;gap:0.5rem;align-items:center;padding:0.2rem 0.4rem;font-size:0.72rem;border-bottom:1px solid var(--border);margin-bottom:0.3rem;">
-              <span>PLC <strong id="plcConnText">--</strong></span>
-              <button id="plcConnectBtn" class="secondary" style="font-size:0.68rem;padding:0.12rem 0.4rem;">连接</button>
-              <button id="plcDisconnectBtn" class="ghost-danger" style="font-size:0.68rem;padding:0.12rem 0.4rem;">断开</button>
             </div>
             <div id="plcMBitsGrid" class="plc-grid"></div>
             <span class="resize-grip"></span>

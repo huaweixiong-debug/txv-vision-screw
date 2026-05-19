@@ -1270,7 +1270,6 @@ function renderStatus(snapshot) {
   $("#alarmText").textContent = snapshot.alarm.message ? `${snapshot.alarm.code}: ${snapshot.alarm.message}` : "\u65e0\u62a5\u8b66";
   $("#alarmText").style.color = snapshot.alarm.message ? "#ffd6c9" : "rgba(255,255,255,.76)";
   setBadge("#visionBadge", snapshot.vision.status, snapshot.vision.status);
-  setBadge("#plcReadyBadge", plcReady(snapshot.plc) ? "PLC \u5c31\u7eea" : "PLC \u672a\u5c31\u7eea", plcReady(snapshot.plc));
   setBadge("#permissionBadge", snapshot.pc_outputs.allow_tightening ? "\u5141\u8bb8\u62e7\u7d27" : "\u672a\u8bb8\u53ef", !!snapshot.pc_outputs.allow_tightening);
   setBadge("#scanBadge", snapshot.state === "pending_scan" ? "\u53ef\u626b\u7801" : record.qr_bind_status || "\u5f85\u6d41\u7a0b\u7ed3\u675f", record.qr_bind_status);
   updateStepTrack(snapshot.state);
@@ -1392,29 +1391,19 @@ function plcAutoMode(plc) {
 
 function renderPlc(plc) {
   const plcPanelTitle = document.querySelector(".plc-panel .panel-head h2");
-  if (plcPanelTitle) plcPanelTitle.textContent = "PLC 条件";
-  const plcReadyBadge = document.getElementById("plcReadyBadge");
-  if (plcReadyBadge && (plcReadyBadge.textContent || "").includes("妫")) {
-    plcReadyBadge.textContent = "检查中";
-  }
-  const plcConnectBtn = document.getElementById("plcConnectBtn");
-  if (plcConnectBtn) plcConnectBtn.textContent = "连接";
-  const plcDisconnectBtn = document.getElementById("plcDisconnectBtn");
-  if (plcDisconnectBtn) plcDisconnectBtn.textContent = "断开";
 
   const mBits = [
     // PLC -> PC (M10.x, M11.x)
     ["m_manual_mode",          "M0.3 手动/自动"],
     ["m_estop",                "M0.4 急停"],
-    ["m_plc_ready",            "M0.5 PLC就绪"],
     ["m_plc_reset",            "M0.6 PLC复位"],
     ["m_plc_tightening_done",  "M10.2 拧紧完成"],
     // PC -> PLC outputs
-    ["m_product_ready",        "M0.0 产品就绪(PC->PLC)"],
-    ["m_tightening_ok",        "M0.1 拧紧OK(PC->PLC)"],
-    ["m_scan_complete",        "M0.2 扫码完成(PC->PLC)"],
-    ["m_disable_scan",         "M0.7 屏蔽扫码(PC->PLC)"],
-    ["m_tightening_ng",        "M1.0 拧紧NG(PC->PLC)"],
+    ["m_product_ready",        "M0.0 产品就绪"],
+    ["m_tightening_ok",        "M0.1 拧紧合格"],
+    ["m_scan_complete",        "M0.2 扫码完成"],
+    ["m_disable_scan",         "M0.7 屏蔽扫码"],
+    ["m_tightening_ng",        "M1.0 拧紧不合格"],
   ];
   var grid = document.getElementById("plcMBitsGrid");
   if (grid) {
@@ -1671,20 +1660,6 @@ function bindEvents() {
   });
 
 
-
-  // PLC connection
-  $("#plcConnectBtn").addEventListener("click", async () => {
-    try {
-      var payload = await api("/api/plc/connect", {});
-      toast(payload.connected ? "PLC \u5df2\u8fde\u63a5" : "PLC \u8fde\u63a5\u5931\u8d25");
-    } catch (e) { toast(e.message); }
-  });
-  $("#plcDisconnectBtn").addEventListener("click", async () => {
-    try {
-      await api("/api/plc/disconnect", {});
-      toast("PLC 已断开");
-    } catch (e) { toast(e.message); }
-  });
 
   $("#scanBtn").addEventListener("click", async () => {
     try {
