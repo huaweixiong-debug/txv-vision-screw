@@ -1263,7 +1263,6 @@ function renderProductSummary(snapshot = statusSnapshot) {
 
 function renderStatus(snapshot) {
   $("#stateLabel").textContent = snapshot.state_label;
-  $("#operatorBadge").textContent = `${snapshot.operator} / ${snapshot.shift}`;
   const record = snapshot.current_record || {};
   $("#serialText").textContent = record.internal_serial || "--";
   $("#qrText").textContent = `\u4e8c\u7ef4\u7801\uff1a${record.qr_code || record.qr_bind_status || "\u5f85\u7ed1\u5b9a"}`;
