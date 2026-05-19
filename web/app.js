@@ -1561,6 +1561,7 @@ function renderRecent(records, stats) {
         <td>${escapeHtml(row.internal_serial || "")}</td>
         <td>${escapeHtml(row.qr_code || "")}</td>
         <td>${escapeHtml(row.operator || row.operator_name || "")}</td>
+        <td>${escapeHtml(row.operator || row.operator_name || "")}</td>
         <td>${escapeHtml(row.product_model || "")}</td>
         <td>${renderImageLink(row.image_path)}</td>
         <td>${asFixed(row.bolt1_torque)}</td>
@@ -1593,6 +1594,7 @@ function renderRecordRows(records) {
         <td style="white-space:nowrap;font-size:0.68rem;">${fmtTime(row.created_at)}</td>
         <td>${escapeHtml(row.internal_serial || "")}</td>
         <td>${escapeHtml(row.qr_code || "")}</td>
+        <td>${escapeHtml(row.operator || row.operator_name || "")}</td>
         <td>${escapeHtml(row.product_model || "")}</td>
         <td>${renderImageLink(row.image_path)}</td>
         <td>${asFixed(row.bolt1_torque)}</td>
@@ -1614,7 +1616,7 @@ function fmtTime(val) {
 
 function renderImageLink(path) {
   if (!path) return "--";
-  return `<a href="/api/image?path=${encodeURIComponent(path)}" target="_blank" title="鏌ョ湅鍥剧墖">鍥剧墖</a>`;
+  return '<a href=\"/api/image?path=' + encodeURIComponent(path) + '\" target=\"_blank\" title=\"' + '查看图片' + '\">' + '图片' + '</a>';
 }
 
 function renderResultChip(val) {
