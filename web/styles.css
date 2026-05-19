@@ -260,8 +260,8 @@ h2 {
 
 .production-summary {
   grid-column: 1 / -1;
-  grid-template-columns: minmax(240px, 1.55fr) minmax(140px, 0.9fr) minmax(140px, 0.95fr);
-  gap: 0.6rem;
+  grid-template-columns: minmax(320px, 2.1fr) minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 0.55rem;
 }
 
 .production-board .panel {
@@ -272,12 +272,13 @@ h2 {
   touch-action: none;
   min-width: 200px;
   min-height: 120px;
+  transition: left 0.24s ease, top 0.24s ease, width 0.24s ease, height 0.24s ease, box-shadow 0.16s ease;
 }
 
 .production-summary {
   position: relative;
   z-index: 1;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
 }
 
 .panel-head[data-drag-handle] {
@@ -335,8 +336,8 @@ h2 {
 .hero-card,
 .metric-card {
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 0.75rem;
+  border-radius: 12px;
+  padding: 0.62rem;
   background: var(--card);
   box-shadow: 0 2px 8px rgba(20, 45, 54, 0.06);
 }
@@ -402,21 +403,21 @@ h2 {
 }
 
 .hero-line strong {
-  font-size: clamp(1.1rem, 1.4vw, 1.5rem);
+  font-size: clamp(1.02rem, 1.25vw, 1.35rem);
 }
 
 .step-track {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 0.2rem;
-  margin: 0.4rem 0 0.15rem;
+  gap: 0.18rem;
+  margin: 0.28rem 0 0.1rem;
 }
 
 .step-track span {
-  padding: 0.18rem 0.2rem;
+  padding: 0.16rem 0.18rem;
   border-radius: 999px;
   text-align: center;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   background: rgba(255, 255, 255, 0.12);
   color: rgba(255, 255, 255, 0.62);
   white-space: nowrap;
@@ -435,12 +436,12 @@ h2 {
 }
 
 .metric-card {
-  padding: 0.55rem 0.65rem;
+  padding: 0.48rem 0.58rem;
 }
 
 .metric-card strong {
   display: block;
-  font-size: 1.05rem;
+  font-size: 1rem;
 }
 
 .metric-card span {
@@ -452,20 +453,9 @@ h2 {
   font-size: 0.68rem;
   color: var(--muted);
 }
-  margin: 0.25rem 0;
-  font-size: clamp(1.05rem, 1.35vw, 1.45rem);
-}
-
-.metric-card span {
-  color: var(--muted);
-}
-
-.metric-card small {
-  color: var(--muted);
-}
 
 .panel-head {
-  margin-bottom: clamp(0.45rem, 0.68vw, 0.75rem);
+  margin-bottom: 0.32rem;
 }
 
 .form-row {
@@ -478,7 +468,7 @@ h2 {
 
 /* Left-column panels: compact 3-column form rows */
 .operator-panel {
-  padding: 0.5rem 0.6rem;
+  padding: 0.52rem 0.56rem;
 }
 
 .operator-grid {
@@ -517,11 +507,6 @@ h2 {
   padding: 0.22rem 0.45rem;
   font-size: 0.68rem;
   white-space: nowrap;
-}
-
-.scan-panel .form-row {
-  grid-template-columns: minmax(120px, 1fr) auto auto;
-  gap: 0.3rem;
 }
 
 .primary {
@@ -589,47 +574,110 @@ h2 {
 
 .camera-box {
   flex: 1;
-  min-height: clamp(100px, 16vh, 200px);
+  min-height: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   overflow: hidden;
   justify-content: center;
   border: 1px solid rgba(21, 108, 114, 0.18);
-  border-radius: 12px;
+  border-radius: 18px;
   background: #0a0f14;
-}
-
-#cameraFeed {
+  position: relative;
   width: 100%;
   height: 100%;
+  padding: 0.25rem;
+}
+
+#cameraFeed,
+#datasetsCameraFeed {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   transform-origin: center center;
   transition: transform 0.12s ease;
-  display: block;
 }
 
 .camera-panel {
   background: var(--card);
+  padding: 0.56rem 0.58rem 0.58rem;
 }
 
 .camera-panel .panel-head {
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.24rem;
 }
 
 .vision-stage {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(180px, 0.8fr);
-  gap: 0.5rem;
+  display: block;
+  position: relative;
 }
 
 .vision-insight {
+  position: absolute;
+  right: 0.65rem;
+  bottom: 0.65rem;
+  width: min(220px, 38%);
+  max-height: calc(100% - 1.3rem);
+  padding: 0.4rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(12, 17, 22, 0.76);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vision-detections {
   display: grid;
-  grid-template-rows: auto auto auto;
-  gap: 0.4rem;
+  gap: 0.16rem;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.vision-empty {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.72rem;
+}
+
+.vision-detection-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.36rem;
+  padding: 0.14rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vision-detection-item:last-child {
+  border-bottom: 0;
+}
+
+.vision-detection-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.vision-detection-label {
   min-width: 0;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 0.76rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vision-detection-conf {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 0.7rem;
+  font-family: Consolas, monospace;
 }
 
 .vision-kpis {
@@ -771,10 +819,10 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 0.35rem;
-  padding: 0.28rem 0.4rem;
+  padding: 0.24rem 0.34rem;
   border-radius: 8px;
   color: var(--ink);
-  font-size: 0.7rem;
+  font-size: 0.67rem;
   white-space: nowrap;
   background: #f4f7f5;
 }
@@ -785,17 +833,17 @@ h2 {
 
 .bolt-grid {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .bolt-card {
   display: grid;
   grid-template-columns: 62px 1fr 1fr minmax(72px, 100px);
-  gap: 0.35rem;
+  gap: 0.3rem;
   align-items: end;
-  padding: 0.4rem;
+  padding: 0.32rem;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 12px;
   background: #fbfcf9;
 }
 
@@ -813,7 +861,7 @@ h2 {
   max-height: 240px;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 .recent-panel .table-wrap {
@@ -826,13 +874,13 @@ h2 {
 
 .recent-panel table {
   table-layout: auto;
-  min-width: 600px;
-  font-size: 0.66rem;
+  min-width: 980px;
+  font-size: 0.64rem;
 }
 
 .recent-panel th {
-  font-size: 0.66rem;
-  padding: 0.28rem 0.35rem;
+  font-size: 0.64rem;
+  padding: 0.24rem 0.32rem;
   background: var(--surface);
   position: sticky;
   top: 0;
@@ -840,9 +888,30 @@ h2 {
 }
 
 .recent-panel td {
-  padding: 0.22rem 0.35rem;
+  padding: 0.18rem 0.32rem;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.scan-form {
+  display: grid;
+  gap: 0.42rem;
+  margin-top: 0.12rem;
+}
+
+.scan-input {
+  gap: 0.18rem;
+}
+
+.scan-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.32rem;
+}
+
+.scan-actions button {
+  width: 100%;
+  min-height: 34px;
 }
 
 .recent-panel tbody tr:nth-child(even) {
@@ -1400,7 +1469,7 @@ body.is-resizing-columns {
   }
 
   .production-summary {
-    grid-template-columns: minmax(280px, 1.55fr) minmax(120px, 0.9fr) minmax(120px, 0.95fr);
+    grid-template-columns: minmax(280px, 1.8fr) minmax(150px, 1fr) minmax(150px, 1fr);
   }
 
   .panel,
@@ -1462,13 +1531,18 @@ body.is-resizing-columns {
   }
 
   .camera-box {
-    min-height: 100px;
-    border-radius: 16px;
+    min-height: 0;
+    border-radius: 18px;
   }
 
   .vision-stage {
-    grid-template-columns: minmax(0, 1.45fr) minmax(190px, 0.95fr);
-    gap: 0.45rem;
+    display: block;
+  }
+
+  .vision-insight {
+    width: min(200px, 42%);
+    right: 0.55rem;
+    bottom: 0.55rem;
   }
 
   .vision-kpi {
@@ -1580,6 +1654,10 @@ body.is-resizing-columns {
     border-radius: 10px;
   }
 
+  .scan-actions {
+    gap: 0.26rem;
+  }
+
   .bolt-card strong {
     font-size: 0.84rem;
   }
@@ -1637,6 +1715,10 @@ body.is-resizing-columns {
     grid-template-columns: 1fr;
   }
 
+  .vision-insight {
+    width: min(220px, 45%);
+  }
+
   .settings-grid.compact.three,
   .settings-grid.compact.six,
   .settings-table-grid,
@@ -1671,7 +1753,7 @@ body.is-resizing-columns {
     flex-direction: column;
   }
 
-  .scan-panel .form-row {
+  .scan-actions {
     grid-template-columns: 1fr;
   }
 }
@@ -1707,15 +1789,7 @@ body.is-resizing-columns {
   margin-bottom: 0.55rem;
 }
 
-#datasetsCameraFeed {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  transform-origin: center center;
-  transition: transform 0.12s ease;
-}
-
+.camera-transform-badge,
 .datasets-transform-badge {
   position: absolute;
   top: 0.45rem;

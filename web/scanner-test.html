@@ -3,160 +3,527 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>扫码枪测试</title>
+  <title>扫码枪测试页</title>
   <style>
     :root {
-      --ink: #10212b;
-      --muted: #6b7a84;
-      --green: #2f7d4f;
+      --bg: #eef3ea;
+      --panel: rgba(255, 255, 255, 0.96);
+      --ink: #17313a;
+      --muted: #60727b;
+      --line: rgba(23, 49, 58, 0.12);
+      --green: #2d7a4f;
       --red: #b7382f;
-      --paper: #f5f7f3;
-      --card: rgba(255,255,255,0.95);
-      --shadow: 0 8px 30px rgba(20,45,54,0.12);
+      --amber: #b07a18;
+      --navy: #10212b;
+      --shadow: 0 20px 60px rgba(21, 40, 48, 0.14);
     }
+
     * { box-sizing: border-box; }
+
     body {
-      margin: 0; min-height: 100vh;
+      margin: 0;
+      min-height: 100vh;
       font-family: "Microsoft YaHei", sans-serif;
       color: var(--ink);
-      background: linear-gradient(135deg, #eef2e8 0%, #f7f2e8 55%, #e9f1ed 100%);
-      display: flex; align-items: center; justify-content: center;
+      background:
+        radial-gradient(circle at top left, rgba(98, 150, 114, 0.14), transparent 30%),
+        radial-gradient(circle at top right, rgba(201, 156, 88, 0.12), transparent 28%),
+        linear-gradient(135deg, #edf2e8 0%, #f4efe4 52%, #e9f1ef 100%);
+      padding: 32px 16px;
     }
-    .card {
-      background: var(--card);
-      border-radius: 20px;
+
+    .page {
+      width: min(1080px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero,
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      border-radius: 24px;
       box-shadow: var(--shadow);
-      padding: 2.5rem;
-      max-width: 560px;
-      width: 90%;
-      text-align: center;
+      backdrop-filter: blur(10px);
     }
-    h1 { margin: 0 0 0.3rem; font-size: 1.5rem; }
-    .sub { color: var(--muted); font-size: 0.85rem; margin-bottom: 1.8rem; }
-    .status {
-      display: inline-block;
-      padding: 0.25rem 0.7rem;
-      border-radius: 12px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      margin-bottom: 1.2rem;
+
+    .hero {
+      padding: 26px 28px;
+      display: grid;
+      gap: 16px;
     }
-    .status.ok { background: #d4edda; color: var(--green); }
-    .status.err { background: #f8d7da; color: var(--red); }
-    .result-box {
-      background: #1a1a2e;
-      color: #0f0;
-      border-radius: 12px;
-      padding: 1.2rem;
-      font-family: "Consolas", "Courier New", monospace;
-      font-size: 0.9rem;
-      min-height: 60px;
-      text-align: left;
+
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      line-height: 1.1;
+    }
+
+    .sub {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .badge.ok { background: rgba(45, 122, 79, 0.12); color: var(--green); }
+    .badge.err { background: rgba(183, 56, 47, 0.12); color: var(--red); }
+    .badge.warn { background: rgba(176, 122, 24, 0.14); color: var(--amber); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+    }
+
+    .panel {
+      padding: 22px;
+    }
+
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 1.05rem;
+    }
+
+    .command-box {
+      display: grid;
+      gap: 12px;
+    }
+
+    .hex-row {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(16, 33, 43, 0.03);
+    }
+
+    .hex-row .label {
+      font-weight: 700;
+    }
+
+    .hex {
+      font-family: Consolas, "Courier New", monospace;
+      color: var(--navy);
+      font-size: 0.96rem;
       word-break: break-all;
-      margin-bottom: 1rem;
-      line-height: 1.6;
     }
-    .result-box .dim { color: #666; }
-    .list { text-align: left; margin-top: 1.2rem; }
-    .list h3 { font-size: 0.9rem; margin: 0 0 0.5rem; color: var(--muted); }
-    .list-item {
-      display: flex; justify-content: space-between;
-      padding: 0.35rem 0;
-      border-bottom: 1px solid #eee;
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { cursor: wait; opacity: 0.65; transform: none; }
+
+    input, select {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font: inherit;
+      min-width: 120px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .primary {
+      color: #fff;
+      background: linear-gradient(135deg, #2f7d4f, #3a9a63);
+      box-shadow: 0 10px 24px rgba(47, 125, 79, 0.24);
+    }
+
+    .danger {
+      color: #fff;
+      background: linear-gradient(135deg, #a63c34, #cf4d43);
+      box-shadow: 0 10px 24px rgba(166, 60, 52, 0.24);
+    }
+
+    .ghost {
+      color: var(--ink);
+      background: rgba(16, 33, 43, 0.06);
+    }
+
+    .kv {
+      display: grid;
+      gap: 10px;
+    }
+
+    .kv-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.92rem;
+    }
+
+    .kv-item:last-child { border-bottom: 0; }
+    .kv-item .k { color: var(--muted); }
+    .kv-item .v { text-align: right; font-weight: 700; }
+
+    .result-box {
+      margin-top: 12px;
+      padding: 18px;
+      min-height: 124px;
+      border-radius: 18px;
+      background: #0f1d22;
+      color: #c7ffd1;
+      font-family: Consolas, "Courier New", monospace;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    .result-code {
+      font-size: 1.18rem;
+      color: #62ff93;
+      word-break: break-all;
+    }
+
+    .result-meta {
+      margin-top: 8px;
+      color: #86a3ad;
       font-size: 0.85rem;
     }
-    .list-item .code { font-family: "Consolas", monospace; color: var(--ink); }
-    .list-item .time { color: var(--muted); }
-    .hint {
-      margin-top: 1.5rem;
-      font-size: 1.05rem;
-      color: var(--muted);
+
+    .result-empty {
+      color: #738a91;
+      line-height: 1.7;
     }
-    .hint strong { color: var(--ink); }
+
+    .log {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(16, 33, 43, 0.04);
+      color: var(--muted);
+      min-height: 48px;
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+
+    .history {
+      display: grid;
+      gap: 10px;
+      max-height: 360px;
+      overflow: auto;
+    }
+
+    .history-item {
+      display: grid;
+      gap: 6px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.72);
+    }
+
+    .history-code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95rem;
+      color: var(--navy);
+      word-break: break-all;
+    }
+
+    .history-time {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+      .hex-row { grid-template-columns: 1fr; }
+      .kv-item { flex-direction: column; align-items: flex-start; }
+      .kv-item .v { text-align: left; }
+    }
   </style>
 </head>
 <body>
-<div class="card">
-  <h1>扫码枪通讯测试</h1>
-  <p class="sub">扫描条码 → HMI 串口读取 → 本页显示</p>
-  <div class="status" id="statusBadge">检查中...</div>
-  <div class="result-box" id="resultBox">
-    <span class="dim">等待扫码枪数据...<br>请扫描任意条码</span>
+  <div class="page">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>扫码枪测试页</h1>
+          <p class="sub">开始扫码命令为 <code>16 54 0D</code>，停止扫码命令为 <code>16 55 0D</code>。如果红光不亮，先看系统是否真的识别到了串口。</p>
+        </div>
+        <div class="badge-row">
+          <span class="badge warn" id="hmiBadge">HMI 检查中</span>
+          <span class="badge warn" id="scannerBadge">扫码枪检查中</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <h2>软件触发</h2>
+        <div class="command-box">
+          <div class="hex-row">
+            <div class="label">开始扫码</div>
+            <div class="hex">16 54 0D</div>
+          </div>
+          <div class="hex-row">
+            <div class="label">停止扫码</div>
+            <div class="hex">16 55 0D</div>
+          </div>
+          <div class="btn-row">
+            <button id="startBtn" class="primary">开始扫码</button>
+            <button id="stopBtn" class="danger">停止扫码</button>
+            <button id="refreshBtn" class="ghost">刷新状态</button>
+            <button id="clearBtn" class="ghost">清空记录</button>
+          </div>
+          <div class="hex-row">
+            <div class="label">串口重连</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+              <select id="portSelect"></select>
+              <input id="portInput" value="COM3" />
+              <input id="baudInput" value="115200" />
+              <button id="reconnectBtn" class="ghost">重连串口</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="result-box" id="resultBox">
+          <div class="result-empty">等待扫码结果...<br />点击“开始扫码”后，用扫码枪读取条码。</div>
+        </div>
+        <div class="log" id="logBox">尚未发送命令。</div>
+      </div>
+
+      <div class="panel">
+        <h2>串口状态</h2>
+        <div class="kv">
+          <div class="kv-item"><span class="k">模式</span><span class="v" id="modeValue">--</span></div>
+          <div class="kv-item"><span class="k">当前配置</span><span class="v" id="portValue">--</span></div>
+          <div class="kv-item"><span class="k">波特率</span><span class="v" id="baudValue">--</span></div>
+          <div class="kv-item"><span class="k">连接</span><span class="v" id="connectedValue">--</span></div>
+          <div class="kv-item"><span class="k">系统可见串口</span><span class="v" id="availablePortsValue">--</span></div>
+          <div class="kv-item"><span class="k">最近扫码时间</span><span class="v" id="scanTimeValue">--</span></div>
+          <div class="kv-item"><span class="k">最近错误</span><span class="v" id="errorValue">--</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>扫码历史</h2>
+      <div class="history" id="historyList"></div>
+    </section>
   </div>
-  <div class="list" id="historyList" style="display:none;">
-    <h3>扫码记录</h3>
-    <div id="historyItems"></div>
-  </div>
-  <p class="hint" id="hintText">
-    状态: <strong id="connState">--</strong>
-  </p>
-</div>
 
-<script>
-const BOX = document.getElementById("resultBox");
-const BADGE = document.getElementById("statusBadge");
-const HINT = document.getElementById("connState");
-const HISTORY = document.getElementById("historyList");
-const HISTORY_ITEMS = document.getElementById("historyItems");
+  <script>
+    const state = {
+      lastQr: "",
+      scans: [],
+      busy: false,
+    };
 
-let lastQr = "";
-let scans = [];
+    const $ = (selector) => document.querySelector(selector);
 
-async function check() {
-  try {
-    // Check HMI API health
-    let resp = await fetch("/api/health");
-    let health = await resp.json();
-    if (!health.ok) throw new Error("HMI not ok");
-
-    // Get status to read last_qr
-    resp = await fetch("/api/status");
-    let status = await resp.json();
-    let qr = status.last_qr || "";
-    let scanner = status.settings_summary || {};
-
-    // Get settings for scanner config
-    resp = await fetch("/api/settings");
-    let settings = await resp.json();
-    let scfg = settings.scanner || {};
-
-    HINT.textContent = `串口 ${scfg.com_port || "COM3"} @ ${scfg.baudrate || 115200} | HMI 在线`;
-    BADGE.textContent = "就绪 — 请扫码";
-    BADGE.className = "status ok";
-
-    // Check if new scan arrived
-    if (qr && qr !== lastQr) {
-      lastQr = qr;
-      let now = new Date().toLocaleTimeString();
-      scans.unshift({ code: qr, time: now });
-      if (scans.length > 20) scans.pop();
-
-      BOX.innerHTML = `<div style="font-size:1.2rem;color:#0f0;">▸ ${escapeHtml(qr)}</div>
-        <div style="color:#888;margin-top:0.3rem;">${now} | 长度: ${qr.length} 字符</div>`;
-
-      // Render history
-      HISTORY.style.display = "block";
-      HISTORY_ITEMS.innerHTML = scans.map(s =>
-        `<div class="list-item">
-          <span class="code">${escapeHtml(s.code)}</span>
-          <span class="time">${s.time}</span>
-        </div>`
-      ).join("");
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     }
-  } catch(e) {
-    BADGE.textContent = "HMI 离线或未响应";
-    BADGE.className = "status err";
-    HINT.textContent = "错误: " + e.message;
-  }
-}
 
-function escapeHtml(s) {
-  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-}
+    function setBadge(node, text, tone) {
+      node.textContent = text;
+      node.className = `badge ${tone}`;
+    }
 
-// Poll every 500ms
-setInterval(check, 500);
-check();
-</script>
+    function setBusy(busy) {
+      state.busy = busy;
+      $("#startBtn").disabled = busy;
+      $("#stopBtn").disabled = busy;
+      $("#refreshBtn").disabled = busy;
+      $("#reconnectBtn").disabled = busy;
+    }
+
+    async function api(path, body = null) {
+      const response = await fetch(path, body ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      } : {});
+      const payload = await response.json();
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || `请求失败: ${path}`);
+      }
+      return payload;
+    }
+
+    function renderHistory() {
+      const list = $("#historyList");
+      if (state.scans.length === 0) {
+        list.innerHTML = '<div class="history-item"><div class="history-time">暂无扫码记录</div></div>';
+        return;
+      }
+      list.innerHTML = state.scans.map((item) => `
+        <div class="history-item">
+          <div class="history-code">${escapeHtml(item.code)}</div>
+          <div class="history-time">${escapeHtml(item.time)}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderResult(code, scanTime) {
+      if (!code) {
+        $("#resultBox").innerHTML = '<div class="result-empty">等待扫码结果...<br />点击“开始扫码”后，用扫码枪读取条码。</div>';
+        return;
+      }
+      $("#resultBox").innerHTML = `
+        <div class="result-code">${escapeHtml(code)}</div>
+        <div class="result-meta">时间: ${escapeHtml(scanTime || "--")} | 长度: ${code.length}</div>
+      `;
+    }
+
+    function appendScan(code, scanTime) {
+      if (!code || code === state.lastQr) return;
+      state.lastQr = code;
+      state.scans.unshift({ code, time: scanTime || new Date().toLocaleTimeString("zh-CN", { hour12: false }) });
+      if (state.scans.length > 30) state.scans.pop();
+      renderResult(code, scanTime);
+      renderHistory();
+    }
+
+    function renderAvailablePorts(ports, currentPort) {
+      const select = $("#portSelect");
+      const values = Array.isArray(ports) ? ports.slice() : [];
+      if (currentPort && !values.includes(currentPort)) values.unshift(currentPort);
+      if (values.length === 0) values.push("");
+      select.innerHTML = values.map((port) => `<option value="${escapeHtml(port)}">${escapeHtml(port || "无可用串口")}</option>`).join("");
+      select.value = currentPort || values[0];
+      $("#availablePortsValue").textContent = values.filter(Boolean).join(", ") || "无";
+    }
+
+    async function refreshStatus() {
+      try {
+        const health = await api("/api/health");
+        setBadge($("#hmiBadge"), health.ok ? "HMI 在线" : "HMI 异常", health.ok ? "ok" : "err");
+
+        const scanner = await api("/api/scanner/status");
+        const isConnected = scanner.connected === true;
+        setBadge($("#scannerBadge"), isConnected ? "扫码枪已连接" : "扫码枪未连接", isConnected ? "ok" : "err");
+
+        const currentPort = scanner.com_port || scanner.configured_port || "COM3";
+        $("#modeValue").textContent = scanner.mode || "--";
+        $("#portValue").textContent = currentPort;
+        $("#baudValue").textContent = scanner.baudrate || scanner.configured_baudrate || 115200;
+        $("#connectedValue").textContent = isConnected ? "已连接" : "未连接";
+        $("#scanTimeValue").textContent = scanner.last_scan_at || "--";
+        $("#errorValue").textContent = scanner.last_error || "--";
+        $("#portInput").value = currentPort;
+        $("#baudInput").value = scanner.baudrate || scanner.configured_baudrate || 115200;
+        renderAvailablePorts(scanner.available_ports, currentPort);
+
+        if (scanner.last_qr) {
+          appendScan(scanner.last_qr, scanner.last_scan_at);
+        }
+      } catch (error) {
+        setBadge($("#hmiBadge"), "HMI 离线", "err");
+        setBadge($("#scannerBadge"), "扫码枪未知", "warn");
+        $("#errorValue").textContent = error.message;
+        $("#logBox").textContent = `状态刷新失败: ${error.message}`;
+      }
+    }
+
+    async function sendTrigger(path, label) {
+      setBusy(true);
+      try {
+        const payload = await api(path, {});
+        $("#logBox").textContent = `${label} 已发送: ${payload.command_hex} -> ${payload.com_port} @ ${payload.baudrate}`;
+        await refreshStatus();
+      } catch (error) {
+        $("#logBox").textContent = `${label} 失败: ${error.message}`;
+        await refreshStatus();
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function reconnectScanner() {
+      setBusy(true);
+      try {
+        const selected = $("#portSelect").value.trim();
+        const typed = $("#portInput").value.trim();
+        const port = typed || selected || "COM3";
+        const baudrate = Number($("#baudInput").value || 115200);
+        const payload = await api("/api/scanner/reconnect", { com_port: port, baudrate });
+        $("#logBox").textContent = `串口已重连: ${payload.com_port || payload.configured_port} @ ${payload.baudrate || payload.configured_baudrate}`;
+        await refreshStatus();
+      } catch (error) {
+        $("#logBox").textContent = `串口重连失败: ${error.message}`;
+        await refreshStatus();
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function bindEvents() {
+      $("#startBtn").addEventListener("click", () => sendTrigger("/api/scanner/trigger/start", "开始扫码"));
+      $("#stopBtn").addEventListener("click", () => sendTrigger("/api/scanner/trigger/stop", "停止扫码"));
+      $("#refreshBtn").addEventListener("click", refreshStatus);
+      $("#reconnectBtn").addEventListener("click", reconnectScanner);
+      $("#portSelect").addEventListener("change", () => {
+        if ($("#portSelect").value) $("#portInput").value = $("#portSelect").value;
+      });
+      $("#clearBtn").addEventListener("click", () => {
+        state.lastQr = "";
+        state.scans = [];
+        renderResult("", "");
+        renderHistory();
+        $("#logBox").textContent = "已清空页面记录。";
+      });
+    }
+
+    async function boot() {
+      bindEvents();
+      renderHistory();
+      await refreshStatus();
+      setInterval(refreshStatus, 500);
+    }
+
+    boot().catch((error) => {
+      $("#logBox").textContent = `初始化失败: ${error.message}`;
+    });
+  </script>
 </body>
 </html>

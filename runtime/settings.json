@@ -1,0 +1,164 @@
+{
+  "station": {
+    "station_id": "ST01",
+    "line_name": "膨胀阀自动装配",
+    "product_models": [
+      "HB11",
+      "E22H",
+      "E211"
+    ],
+    "active_product_model": "HB11",
+    "active_recipe_no": 1
+  },
+  "auth": {
+    "operator_login_required": true,
+    "default_operator": "OP001",
+    "default_shift": "白班",
+    "roles": [
+      "管理员",
+      "工艺员",
+      "操作员"
+    ]
+  },
+  "recipe": {
+    "bolt_count": 2,
+    "torque_target_nm": 4.5,
+    "torque_min_nm": 4.0,
+    "torque_max_nm": 5.0,
+    "angle_target_deg": 90.0,
+    "angle_min_deg": 70.0,
+    "angle_max_deg": 120.0,
+    "qr_rule": "^[A-Za-z0-9_.-]{6,80}$",
+    "enable_vision_interlock": true,
+    "enable_qr_binding": true,
+    "reject_duplicate_qr": true
+  },
+  "products": [
+    {
+      "bolt_count": 2,
+      "torque_target_nm": 4.5,
+      "torque_min_nm": 4.0,
+      "torque_max_nm": 5.0,
+      "angle_target_deg": 90.0,
+      "angle_min_deg": 70.0,
+      "angle_max_deg": 120.0,
+      "qr_rule": "^[A-Za-z0-9_.-]{6,80}$",
+      "enable_vision_interlock": true,
+      "enable_qr_binding": true,
+      "reject_duplicate_qr": true,
+      "enabled": true,
+      "product_model": "HB11",
+      "recipe_no": 1,
+      "kilews_job_no": 1
+    },
+    {
+      "bolt_count": 2,
+      "torque_target_nm": 4.5,
+      "torque_min_nm": 4.0,
+      "torque_max_nm": 5.0,
+      "angle_target_deg": 90.0,
+      "angle_min_deg": 70.0,
+      "angle_max_deg": 120.0,
+      "qr_rule": "^[A-Za-z0-9_.-]{6,80}$",
+      "enable_vision_interlock": true,
+      "enable_qr_binding": true,
+      "reject_duplicate_qr": true,
+      "enabled": true,
+      "product_model": "E22H",
+      "recipe_no": 2,
+      "kilews_job_no": 2
+    },
+    {
+      "bolt_count": 2,
+      "torque_target_nm": 4.5,
+      "torque_min_nm": 4.0,
+      "torque_max_nm": 5.0,
+      "angle_target_deg": 90.0,
+      "angle_min_deg": 70.0,
+      "angle_max_deg": 120.0,
+      "qr_rule": "^[A-Za-z0-9_.-]{6,80}$",
+      "enable_vision_interlock": true,
+      "enable_qr_binding": true,
+      "reject_duplicate_qr": true,
+      "enabled": true,
+      "product_model": "E211",
+      "recipe_no": 3,
+      "kilews_job_no": 3
+    }
+  ],
+  "personnel": [
+    {
+      "enabled": true,
+      "employee_id": "OP001",
+      "name": "默认操作员",
+      "role": "操作员",
+      "shift": "白班"
+    }
+  ],
+  "vision": {
+    "model_path": "D:\\ultralytics-main\\best.pt",
+    "model_version": "best.pt",
+    "camera_ip": "192.168.0.101",
+    "mvs_path": "C:/Program Files (x86)/MVS/Development/Samples/Python/MvImport",
+    "confidence_threshold": 0.15,
+    "iou_threshold": 0.3,
+    "dedup_overlap": 0.7,
+    "capture_mode": "manual",
+    "yolo_classes": [
+      "NG",
+      "O_Ring",
+      "QR",
+      "TXV"
+    ],
+    "inference_enabled": true,
+    "frame_interval_ms": 250,
+    "inference_interval_ms": 300,
+    "inference_size": 416,
+    "auto_capture_enabled": true,
+    "camera_exposure_us": 80000
+  },
+  "plc": {
+    "enabled": true,
+    "ip": "192.168.0.10",
+    "port": 102,
+    "rack": 0,
+    "slot": 1,
+    "timeout": 2.0,
+    "reconnect_interval_s": 5.0,
+    "auto_connect": true,
+    "model": "S7-200 SMART 6ES7288-1SR20-0AA1",
+    "area": "V",
+    "heartbeat_timeout_ms": 1000,
+    "address_table_version": "v0.6"
+  },
+  "automation": {
+    "enabled": false,
+    "stability_duration_s": 2.0,
+    "stability_position_threshold_px": 30,
+    "coverage_ratio_threshold": 0.85,
+    "tightening_poll_interval_ms": 300,
+    "tightening_timeout_s": 30.0
+  },
+  "kilews": {
+    "enabled": false,
+    "ip": "192.168.3.10",
+    "port": 502,
+    "unit_id": 1,
+    "auto_connect": true,
+    "speed_rpm": 500
+  },
+  "scanner": {
+    "mode": "serial",
+    "host": "0.0.0.0",
+    "port": 9100,
+    "com_port": "COM3",
+    "baudrate": 115200,
+    "terminator": "\\r\\n"
+  },
+  "data": {
+    "database_path": "runtime/production.db",
+    "export_root": "D:\\膨胀阀装配数据",
+    "image_root": "data/images",
+    "dataset_root": "data/datasets"
+  }
+}

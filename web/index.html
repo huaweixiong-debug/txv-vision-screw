@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>膨胀阀拧紧防错追溯 HMI</title>
-    <link rel="stylesheet" href="/styles.css?v=20260515i" />
+    <link rel="stylesheet" href="/styles.css?v=20260519b" />
   </head>
   <body>
     <div class="shell">
@@ -83,10 +83,11 @@
             <div class="vision-stage">
               <div class="camera-box">
                 <img id="cameraFeed" src="" alt="" />
+                <div class="camera-transform-badge" id="productionTransformBadge" style="display:none;"></div>
               </div>
               <div class="vision-insight">
-                <div id="visionDetections" style="overflow-y:auto;flex:1;">
-                  <span style="color:var(--muted);font-size:0.72rem;">等待检测...</span>
+                <div id="visionDetections" class="vision-detections">
+                  <span class="vision-empty">等待检测...</span>
                 </div>
               </div>
             </div>
@@ -135,10 +136,13 @@
               <span id="scannerLiveCode" style="color:#0f0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
               <span id="scannerLiveTime" style="color:#888;flex-shrink:0;"></span>
             </div>
-            <div class="form-row">
-              <label>二维码<input id="qrInput" placeholder="扫码枪自动填入" /></label>
-              <button id="scanBtn" class="primary">绑定二维码</button>
-              <button id="reworkBtn" class="secondary">PLC 选择返修后继续扫码</button>
+            <div class="scan-form">
+              <label class="scan-input">二维码<input id="qrInput" placeholder="扫码枪自动填入" /></label>
+              <div class="scan-actions">
+                <button id="scanBtn" class="primary">绑定二维码</button>
+                <button id="skipScanBtn" class="secondary">跳过扫码</button>
+                <button id="reworkBtn" class="secondary">返修后扫码</button>
+              </div>
             </div>
             <div id="scannerHistory" style="display:none;margin-top:0.3rem;max-height:120px;overflow-y:auto;border-top:1px solid var(--border);padding-top:0.3rem;">
               <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.2rem;">扫码记录</div>
@@ -409,6 +413,6 @@
       </main>
     </div>
     <div id="toast" class="toast"></div>
-    <script src="/app.js?v=20260515i"></script>
+    <script src="/app.js?v=20260519b"></script>
   </body>
 </html>

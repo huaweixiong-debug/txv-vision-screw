@@ -96,22 +96,24 @@
     }
   ],
   "vision": {
-    "model_path": "D:\\Camera Screw Project\\yolo26s.pt",
-    "model_version": "yolo26s.pt",
-    "camera_ip": "192.168.0.111",
+    "model_path": "D:\\ultralytics-main\\best.pt",
+    "model_version": "best.pt",
+    "camera_ip": "192.168.0.101",
     "mvs_path": "C:/Program Files (x86)/MVS/Development/Samples/Python/MvImport",
-    "confidence_threshold": 0.6,
+    "confidence_threshold": 0.15,
     "capture_mode": "manual",
     "yolo_classes": [
-      "o_ring",
-      "expansion_valve",
-      "bolt"
+      "NG",
+      "O_Ring",
+      "QR",
+      "TXV"
     ],
     "inference_enabled": true,
-    "inference_interval_ms": 500,
-    "inference_size": 1024,
+    "frame_interval_ms": 250,
+    "inference_interval_ms": 300,
+    "inference_size": 416,
     "auto_capture_enabled": true,
-    "camera_exposure_us": 10000
+    "camera_exposure_us": 80000
   },
   "plc": {
     "enabled": true,

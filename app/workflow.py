@@ -5,7 +5,7 @@ import threading
 import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from .config import resolve_path
 from .hardware.camera import MockCameraDevice, MvsCameraDevice
@@ -14,6 +14,7 @@ from .hardware.kilews import (
     KilewsDevice,
     MockKilewsClient,
     ModbusClient,
+    TARGET_TYPE_TORQUE,
     TighteningResult,
 )
 from .hardware.plc import MockPLCClient, PlcState
@@ -25,7 +26,7 @@ from .vision import VisionInference
 STATE_LABELS = {
     "idle": "待开始",
     "vision_wait_stable": "O型圈稳定性检测",
-    "vision_check_cover": "膨胀阀覆盖检测",
+    "vision_check_cover": "二维码检测",
     "plc_handshake": "PLC握手中",
     "vision": "O型圈视觉检测",
     "preassemble": "允许预装",
@@ -67,12 +68,22 @@ class StationWorkflow:
     def __init__(self, settings: dict[str, Any], storage: ProductionStorage) -> None:
         self.settings = settings
         self.storage = storage
+        self.state = "idle"
+        a_cfg = settings.get("automation", {})
+        self.automation_enabled = bool(a_cfg.get("enabled", False))
+        self._manual_inference_interval_s = 0.5
         self.plc = MockPLCClient()
         self.camera: MockCameraDevice | MvsCameraDevice | None = None
+        self.camera_status: dict[str, Any] = {
+            "connected": False,
+            "is_mock": False,
+            "backend": "",
+            "camera_ip": "",
+            "error": "",
+        }
         self._init_kilews(settings)
         self._init_camera(settings)
         self._init_plc(settings)
-        self.state = "idle"
         self.operator = settings["auth"]["default_operator"]
         self.shift = settings["auth"]["default_shift"]
         self.current_record_id: int | None = None
@@ -85,8 +96,6 @@ class StationWorkflow:
         self.updated_at = now_text()
 
         # Automation
-        a_cfg = settings.get("automation", {})
-        self.automation_enabled = bool(a_cfg.get("enabled", False))
         self.stability_detector = StabilityDetector(
             required_count=2,
             stable_duration_s=float(a_cfg.get("stability_duration_s", 2.0)),
@@ -110,6 +119,17 @@ class StationWorkflow:
             "plc_connected": False,
             "tightening_progress": "",
         }
+        self._last_snapshot_output_at = 0.0
+        self._snapshot_output_interval_s = 0.15
+        self._tightening_started_at = 0.0
+        self._tightening_last_progress_at = 0.0
+        self._last_tightening_poll_at = 0.0
+        self._last_kilews_signature: tuple[int, int, int, int, int] | None = None
+        self._tightening_baseline_signature: tuple[int, int, int, int] | None = None
+        self._tightening_baseline_count = 0
+        self._plc_reset_latched = False
+        self._scanner_start_callback: Callable[[], dict[str, Any]] | None = None
+        self._scanner_stop_callback: Callable[[], dict[str, Any]] | None = None
 
     # ------------------------------------------------------------------
     # Init
@@ -136,6 +156,14 @@ class StationWorkflow:
         self._tightening_timeout_s = float(a_cfg.get("tightening_timeout_s", 30.0))
         if was_auto:
             self.enable_automation()
+
+    def set_scanner_callbacks(
+        self,
+        start_callback: Callable[[], dict[str, Any]] | None,
+        stop_callback: Callable[[], dict[str, Any]] | None,
+    ) -> None:
+        self._scanner_start_callback = start_callback
+        self._scanner_stop_callback = stop_callback
 
     def product_config(self, product_model: str | None = None) -> dict[str, Any]:
         model = product_model
@@ -170,6 +198,13 @@ class StationWorkflow:
         vcfg = settings.get("vision", {})
         camera_ip = vcfg.get("camera_ip", "192.168.0.111")
         mvs_path = vcfg.get("mvs_path", r"C:\Program Files (x86)\MVS\Development\Samples\Python\MvImport")
+        self.camera_status = {
+            "connected": False,
+            "is_mock": False,
+            "backend": "mvs",
+            "camera_ip": camera_ip,
+            "error": "",
+        }
         if self.camera is not None:
             try:
                 self.camera.disconnect()
@@ -179,27 +214,60 @@ class StationWorkflow:
             self.camera = MvsCameraDevice(camera_ip, mvs_path)
             ok = self.camera.connect()
             if not ok:
+                self.camera_status.update({
+                    "connected": False,
+                    "is_mock": True,
+                    "backend": "mock",
+                    "error": f"MVS connect failed for {camera_ip}",
+                })
                 print("[Camera] MVS connect failed, using mock")
                 self.camera = MockCameraDevice()
                 self.camera.connect()
+            else:
+                self.camera_status.update({
+                    "connected": True,
+                    "is_mock": False,
+                    "backend": "mvs",
+                    "error": "",
+                })
         except Exception as exc:
+            self.camera_status.update({
+                "connected": False,
+                "is_mock": True,
+                "backend": "mock",
+                "error": str(exc),
+            })
             print(f"[Camera] MVS init failed, using mock: {exc}")
             self.camera = MockCameraDevice()
             self.camera.connect()
+        if isinstance(self.camera, MockCameraDevice):
+            self.camera_status["connected"] = False
+            self.camera_status["is_mock"] = True
+            self.camera_status["backend"] = "mock"
+
+        frame_interval_s = float(vcfg.get("frame_interval_ms", 250)) / 1000.0
+        if hasattr(self.camera, "set_frame_interval"):
+            self.camera.set_frame_interval(frame_interval_s)
 
         if vcfg.get("inference_enabled", True):
             try:
+                inference_size = int(vcfg.get("inference_size", 480))
                 vision_infer = VisionInference(
                     model_path=resolve_path(vcfg.get("model_path", "yolo26s.pt")),
                     confidence_threshold=float(vcfg.get("confidence_threshold", 0.3)),
                     iou_threshold=float(vcfg.get("iou_threshold", 0.3)),
                     dedup_overlap=float(vcfg.get("dedup_overlap", 0.7)),
                     yolo_classes=list(vcfg.get("yolo_classes", ["NG", "O_Ring_L", "O_Ring_S", "QR", "TXV"])),
-                    inference_size=int(vcfg.get("inference_size", 1024)),
+                    inference_size=min(max(inference_size, 320), 416),
                 )
-                interval_s = float(vcfg.get("inference_interval_ms", 500)) / 1000.0
-                self.camera.set_inference(vision_infer, interval_s)
-                print(f"[Camera] YOLO inference wired (interval={interval_s}s)")
+                interval_s = float(vcfg.get("inference_interval_ms", 300)) / 1000.0
+                self.camera.set_inference(
+                    vision_infer,
+                    interval_s,
+                    should_infer=self._should_run_inference,
+                    interval_selector=self._inference_interval_s,
+                )
+                print(f"[Camera] YOLO inference wired (frame_interval={frame_interval_s}s, interval={interval_s}s)")
             except Exception as exc:
                 print(f"[Camera] YOLO inference wiring failed: {exc}")
 
@@ -222,6 +290,27 @@ class StationWorkflow:
             print(f"[PLC] Init failed, using mock: {exc}")
             self.plc = MockPLCClient()
 
+    def _is_visual_inference_state(self) -> bool:
+        return self.state in {
+            "vision",
+            "vision_wait_stable",
+            "vision_check_cover",
+            "preassemble",
+        }
+
+    def _should_run_inference(self) -> bool:
+        if self.camera is None:
+            return False
+        if getattr(self, "automation_enabled", False) and self._is_visual_inference_state():
+            return True
+        return self.camera.has_recent_stream_request(3.0)
+
+    def _inference_interval_s(self) -> float:
+        base = float(self.settings.get("vision", {}).get("inference_interval_ms", 300)) / 1000.0
+        if getattr(self, "automation_enabled", False) and self._is_visual_inference_state():
+            return base
+        return max(base, getattr(self, "_manual_inference_interval_s", 0.5))
+
     def _connect_kilews(self) -> bool:
         if not isinstance(self.kilews, KilewsDevice):
             return False
@@ -240,20 +329,217 @@ class StationWorkflow:
         if isinstance(self.kilews, KilewsDevice):
             self.kilews.modbus.disconnect()
 
+    def _reset_tightening_tracking(self, started_at: float = 0.0) -> None:
+        self._tightening_started_at = started_at
+        self._tightening_last_progress_at = started_at
+        self._last_tightening_poll_at = 0.0
+        self._last_kilews_signature = None
+        self._tightening_baseline_signature = None
+        self._tightening_baseline_count = 0
+
+    def _prime_tightening_baseline(self) -> None:
+        if not isinstance(self.kilews, KilewsDevice):
+            return
+        try:
+            self.kilews.refresh()
+            baseline_signature = (
+                int(self.kilews.result_code),
+                int(self.kilews.torque_raw),
+                int(self.kilews.angle_raw),
+                int(self.kilews.tighten_time_ms),
+            )
+            self._tightening_baseline_signature = baseline_signature
+            self._last_kilews_signature = baseline_signature
+            self._tightening_baseline_count = int(self.kilews.current_count or 0)
+        except Exception as exc:
+            print(f"[Automation] Kilews baseline prime error: {exc}")
+
+    def _reset_runtime_state(self, *, alarm: Alarm | None = None) -> None:
+        bolt_count = max(len(self.bolts), 2)
+        self.state = "idle"
+        self.current_record_id = None
+        self.current_record = None
+        self.bolts = [BoltView(index + 1) for index in range(bolt_count)]
+        self.vision = {
+            "status": "WAIT",
+            "o_ring_count": 0,
+            "confidence": 0.0,
+            "o_ring_ok": False,
+            "detections": [],
+        }
+        self.last_qr = ""
+        self.alarm = alarm or Alarm()
+        self.stability_detector.reset()
+        self._automation_status["stability_progress"] = 0.0
+        self._automation_status["stability_status"] = "unstable"
+        self._automation_status["coverage_status"] = "waiting"
+        self._automation_status["coverage_ratios"] = []
+        self._automation_status["txv_stable_since"] = 0
+        self._automation_status["tightening_progress"] = ""
+        self._reset_tightening_tracking()
+        self._reset_kilews_live_view()
+
+    def _handle_plc_reset(self) -> None:
+        record_id = self.current_record_id
+        self._trigger_scanner_stop("plc_reset")
+        if record_id is not None and self.state not in {"idle", "complete"}:
+            self.current_record = self.storage.update_record(
+                record_id,
+                status="RESET",
+                alarm_code="PLC_RESET",
+                alarm_message="PLC reset",
+                completed_at=now_text(),
+            )
+            self.storage.add_event(record_id, "plc.reset", "PLC reset -> workflow reset to idle")
+
+        self._reset_runtime_state(alarm=Alarm("PLC_RESET", "PLC reset"))
+        self.write_plc_outputs()
+        print("[Automation] PLC reset -> workflow idle")
+
+    def _trigger_scanner_start(self, reason: str) -> None:
+        if self._scanner_start_callback is None:
+            return
+        try:
+            result = self._scanner_start_callback()
+            command_hex = ""
+            if isinstance(result, dict):
+                command_hex = str(result.get("command_hex") or "")
+            if self.current_record_id is not None:
+                detail = reason if not command_hex else f"{reason} -> {command_hex}"
+                self.storage.add_event(self.current_record_id, "scanner.trigger_start", detail)
+            print(f"[Scanner] trigger start [{reason}]")
+        except Exception as exc:
+            if self.current_record_id is not None:
+                self.storage.add_event(self.current_record_id, "scanner.trigger_start_failed", f"{reason}: {exc}")
+            print(f"[Scanner] trigger start failed [{reason}]: {exc}")
+
+    def _trigger_scanner_stop(self, reason: str) -> None:
+        if self._scanner_stop_callback is None:
+            return
+        try:
+            result = self._scanner_stop_callback()
+            command_hex = ""
+            if isinstance(result, dict):
+                command_hex = str(result.get("command_hex") or "")
+            if self.current_record_id is not None:
+                detail = reason if not command_hex else f"{reason} -> {command_hex}"
+                self.storage.add_event(self.current_record_id, "scanner.trigger_stop", detail)
+            print(f"[Scanner] trigger stop [{reason}]")
+        except Exception as exc:
+            if self.current_record_id is not None:
+                self.storage.add_event(self.current_record_id, "scanner.trigger_stop_failed", f"{reason}: {exc}")
+            print(f"[Scanner] trigger stop failed [{reason}]: {exc}")
+
+    def _qr_binding_required(self) -> bool:
+        product_cfg = self.product_config()
+        return bool(product_cfg.get("enable_qr_binding", True))
+
+    def _complete_without_scan(self, reason: str) -> None:
+        self.current_record = self.storage.update_record(
+            self.current_record_id,
+            qr_bind_status="SKIPPED",
+            status="COMPLETED",
+            scanned_at=now_text(),
+            alarm_code="",
+            alarm_message="",
+        )
+        self.storage.add_event(self.current_record_id, "qr.skipped", reason)
+        self.state = "complete"
+        self.alarm = Alarm()
+        if self.automation_enabled:
+            self._signal_plc_scan_complete()
+        else:
+            self.write_plc_outputs()
+
+    def _reset_kilews_live_view(self) -> None:
+        if not hasattr(self.kilews, "current_job"):
+            return
+        self.kilews.current_job = 0
+        self.kilews.current_seq = 0
+        self.kilews.current_step = 0
+        self.kilews.current_count = 0
+        self.kilews.running = False
+        self.kilews.torque_raw = 0
+        self.kilews.angle_raw = 0
+        self.kilews.result_code = 0
+        self.kilews.tighten_time_ms = 0
+
+    def _kilews_snapshot(self) -> dict[str, Any]:
+        payload = self.kilews.status_dict()
+        if self.state not in {"tightening", "tightening_wait", "tightening_eval", "pending_scan", "ng_wait_rework", "complete"}:
+            payload.update({
+                "current_job": 0,
+                "current_seq": 0,
+                "current_step": 0,
+                "current_count": 0,
+                "running": False,
+                "torque_raw": 0,
+                "torque_nm": None,
+                "angle_raw": 0,
+                "angle_deg": None,
+                "result_code": 0,
+                "result_label": "",
+                "tighten_time_ms": 0,
+            })
+        return payload
+
+    def _all_bolts_have_results(self) -> bool:
+        return all(
+            bolt.result in {"OK", "NG"} and bolt.torque_nm is not None and bolt.angle_deg is not None
+            for bolt in self.bolts
+        )
+
+    @staticmethod
+    def _has_detection(detections: list[dict[str, Any]], *names: str) -> bool:
+        wanted = {name.strip().upper() for name in names if name.strip()}
+        for det in detections:
+            label = str(det.get("class_name") or "").strip().upper()
+            if label in wanted:
+                return True
+        return False
+
+    def _auto_trigger_scanner(self, now: float) -> None:
+        """Auto-trigger scanner every 2s when waiting for QR scan."""
+        last_trigger = getattr(self, "_last_scanner_trigger", 0.0)
+        if now - last_trigger < 2.0:
+            return
+        self._last_scanner_trigger = now
+        self._trigger_scanner_start("auto_pending_scan")
+
+    def _qr_ready_detected(self, detections: list[dict[str, Any]]) -> bool:
+        # The current production model may expose QR directly instead of TXV.
+        return (
+            self._has_detection(detections, "QR", "TXV")
+            or self.coverage_detector.check(detections)
+        )
+
     def write_kilews_params(self, product_model: str | None = None) -> dict[str, Any]:
         product_cfg = self.product_config(product_model)
         if not isinstance(self.kilews, KilewsDevice):
             return {"ok": False, "error": "Mock 模式下不支持写入控制器"}
         speed = int(self.settings.get("kilews", {}).get("speed_rpm", 500))
+        kilews_torque_target = float(product_cfg.get("kilews_torque_target_nm", 2.0))
+        kilews_torque_min = float(product_cfg.get("kilews_torque_min_nm", 2.0))
+        kilews_torque_max = float(product_cfg.get("kilews_torque_max_nm", 5.0))
+        kilews_angle_target = float(
+            product_cfg.get(
+                "kilews_angle_target_deg",
+                product_cfg.get("angle_target_deg", 90.0),
+            )
+        )
+        kilews_angle_target_raw = int(product_cfg.get("kilews_angle_target_raw", 900))
+        kilews_angle_min_raw = int(product_cfg.get("kilews_angle_min_raw", 700))
+        kilews_angle_max_raw = int(product_cfg.get("kilews_angle_max_raw", 12000))
         result = self.kilews.write_all_flow(
-            torque_target=float(product_cfg.get("torque_target_nm", 4.5)),
-            torque_min=float(product_cfg.get("torque_min_nm", 4.0)),
-            torque_max=float(product_cfg.get("torque_max_nm", 5.0)),
-            angle_target=float(product_cfg.get("angle_target_deg", 90.0)),
-            angle_min=float(product_cfg.get("angle_min_deg", 70.0)),
-            angle_max=float(product_cfg.get("angle_max_deg", 120.0)),
+            torque_target=kilews_torque_target,
+            torque_min=kilews_torque_min,
+            torque_max=kilews_torque_max,
+            angle_target=kilews_angle_target,
+            angle_target_raw=kilews_angle_target_raw,
+            angle_min_raw=kilews_angle_min_raw,
+            angle_max_raw=kilews_angle_max_raw,
             speed=speed,
-            target_type=2,
+            target_type=TARGET_TYPE_TORQUE,
         )
         self.storage.add_event(
             self.current_record_id,
@@ -304,7 +590,7 @@ class StationWorkflow:
         Monitors YOLO inference → stability → coverage → PLC handshake →
         tightening data collection → QR scan.
         """
-        tick = 0.25  # seconds between loop iterations
+        tick = 0.10  # seconds between loop iterations
 
         while self._automation_running:
             try:
@@ -339,6 +625,22 @@ class StationWorkflow:
         else:
             self._automation_status["plc_connected"] = True
 
+        # Kilews keep-alive
+        if isinstance(self.kilews, KilewsDevice) and not self.kilews.modbus.connected:
+            try:
+                self._connect_kilews()
+            except Exception:
+                pass
+            self._automation_status["plc_connected"] = True
+        plc_state = self.plc.read_state()
+
+        if plc_state.m_plc_reset:
+            if not self._plc_reset_latched:
+                self._plc_reset_latched = True
+                self._handle_plc_reset()
+            return
+        self._plc_reset_latched = False
+
         # ---- State: idle → auto-start when automation runs ----
         if self.state == "idle":
             if not self.automation_enabled:
@@ -355,46 +657,46 @@ class StationWorkflow:
             self._automation_status["stability_progress"] = elapsed
             self._automation_status["stability_target"] = target
 
-            if status == "stable_ok" and o_ring_ok:
+            if o_ring_ok:
+                self._automation_status["stability_status"] = "stable_ok"
+                self._automation_status["stability_progress"] = target
                 self._on_stability_ok()
 
         # ---- State: vision_check_cover ----
         elif self.state == "vision_check_cover":
-            has_txv = any(d.get("class_name") == "TXV" for d in detections)
-            if has_txv:
-                elapsed = self._automation_status.get("txv_stable_since", 0)
-                if elapsed == 0:
-                    self._automation_status["txv_stable_since"] = now
-                else:
-                    duration = now - elapsed
-                    self._automation_status["coverage_status"] = f"detecting {duration:.1f}s"
-                    if duration >= 1.5:
-                        self._on_valve_covered()
+            self._automation_status["coverage_ratios"] = self.coverage_detector.coverage_ratios(detections)
+            if self._qr_ready_detected(detections):
+                self._automation_status["txv_stable_since"] = now
+                self._automation_status["coverage_status"] = "detected"
+                self._on_valve_covered()
             else:
                 self._automation_status["txv_stable_since"] = 0
                 self._automation_status["coverage_status"] = "waiting"
 
         # ---- State: plc_handshake ----
         elif self.state == "plc_handshake":
-            plc_state = self.plc.read_state()
             self._automation_status["coverage_status"] = "plc_waiting"
 
             if plc_state.m_plc_ready:
                 self.state = "tightening_wait"
+                if self._tightening_baseline_signature is None:
+                    self._reset_tightening_tracking(now)
+                else:
+                    self._tightening_started_at = now
+                    self._tightening_last_progress_at = now
+                    self._last_tightening_poll_at = 0.0
                 self._automation_status["tightening_progress"] = "PLC 已就绪，等待拧紧完成..."
                 self.storage.add_event(
                     self.current_record_id, "plc.handshake", "PLC 已就绪"
                 )
                 self.write_plc_outputs()
-                # Reset bolt state + clear old Kilews results
-                self.bolts = [BoltView(i + 1) for i in range(len(self.bolts))]
-                if isinstance(self.kilews, KilewsDevice):
-                    self.kilews.last_result_code = None
+                if isinstance(self.kilews, KilewsDevice) and self._tightening_baseline_signature is None:
+                    self._prime_tightening_baseline()
 
         # ---- State: tightening_wait ----
         elif self.state == "tightening_wait":
             # Poll Kilews for tightening results
-            self._poll_kilews_results()
+            self._poll_kilews_results(now, plc_state)
 
         # ---- State: tightening_eval ----
         elif self.state == "tightening_eval":
@@ -402,9 +704,18 @@ class StationWorkflow:
 
         # ---- State: pending_scan (automation: signal PLC) ----
         elif self.state == "pending_scan":
+            # Auto-trigger scanner if configured
+            self._auto_trigger_scanner(now)
             # Check if QR has been scanned
             if self.current_record and self.current_record.get("qr_bind_status") == "BOUND":
                 self._signal_plc_scan_complete()
+
+        # ---- State: complete -> immediately prepare next auto cycle ----
+        elif self.state == "complete":
+            if self.automation_enabled:
+                self._reset_runtime_state()
+                self.write_plc_outputs()
+                print("[Automation] Cycle complete -> next cycle ready")
 
     def _on_stability_ok(self) -> None:
         """Called when 2-second stability with 2 O-rings is achieved."""
@@ -427,7 +738,7 @@ class StationWorkflow:
             f"O型圈稳定性检测通过（2 个，静止 {elapsed:.1f} 秒）"
         )
         if self.current_record_id is not None:
-            self.storage.update_record(
+            self.current_record = self.storage.update_record(
                 self.current_record_id,
                 vision_status="OK",
                 o_ring_count=2,
@@ -439,11 +750,14 @@ class StationWorkflow:
         print("[Automation] O-ring stability OK → checking valve coverage")
 
     def _on_valve_covered(self) -> None:
-        """Called when expansion valve covers both O-rings."""
+        """Called when the cycle-ready QR/TXV marker is detected."""
         self.state = "plc_handshake"
         self._automation_status["coverage_status"] = "plc_handshake"
 
-        # Write M0.0 = 1 (product ready)
+        # Write M0.0 = 1 (product ready) + clear old Kilews data
+        self.bolts = [BoltView(i + 1) for i in range(len(self.bolts))]
+        if isinstance(self.kilews, KilewsDevice):
+            self.kilews.last_result_code = None
         self.plc.write_outputs({"product_ready": True})
 
         # Compute minimum IoA as coverage confidence
@@ -452,25 +766,47 @@ class StationWorkflow:
 
         self.storage.add_event(
             self.current_record_id, "vision.coverage_ok",
-            f"膨胀阀覆盖检测通过 → PLC M0.0=1 (最低IoA={min_ioa:.3f})"
+            f"二维码检测通过 → PLC M0.0=1 (最低IoA={min_ioa:.3f})"
         )
         if self.current_record_id is not None:
-            self.storage.update_record(
+            self.current_record = self.storage.update_record(
                 self.current_record_id,
                 expansion_valve_detected=1,
                 plc_product_ready_sent=1,
                 coverage_confidence=round(min_ioa, 4),
             )
         self._auto_capture("valve_covered")
+        if isinstance(self.kilews, KilewsDevice):
+            self._reset_tightening_tracking(_time.monotonic())
+            self._prime_tightening_baseline()
         self.write_plc_outputs()
-        print("[Automation] Valve coverage OK → PLC M0.0=1, waiting for PLC ready")
+        print("[Automation] QR detected -> PLC M0.0=1, waiting for PLC ready")
 
-    def _poll_kilews_results(self) -> None:
+    def _poll_kilews_results(self, now: float, plc_state: PlcState) -> None:
         """Poll Kilews Modbus registers for tightening results.
 
         Reads only the result register block (4155-4164, 10 regs) instead of
         a full refresh to keep loop latency low (~1 MODBUS round-trip).
         """
+        def log_poll(message: str) -> None:
+            print(f"[Automation] Kilews poll: {message}")
+
+        if self._tightening_started_at <= 0:
+            self._tightening_started_at = now
+        if self._tightening_last_progress_at <= 0:
+            self._tightening_last_progress_at = self._tightening_started_at
+        if self._tightening_timeout_s > 0 and now - self._tightening_last_progress_at >= self._tightening_timeout_s:
+            for bolt in self.bolts:
+                if bolt.result == "WAIT":
+                    bolt.result = "NG"
+            self._automation_status["tightening_progress"] = "拧紧超时"
+            self.storage.add_event(self.current_record_id, "tightening.timeout", "拧紧超时，按 NG 处理")
+            self.state = "tightening_eval"
+            return
+        if self._last_tightening_poll_at and now - self._last_tightening_poll_at < self._tightening_poll_interval:
+            return
+        self._last_tightening_poll_at = now
+
         if not isinstance(self.kilews, KilewsDevice):
             self._mock_kilews_results()
             return
@@ -479,29 +815,84 @@ class StationWorkflow:
             # Lightweight read: only result registers
             vals = self.kilews.modbus.read_registers(4155, 10)
             if not vals or len(vals) < 10:
+                print(f"[Kilews] poll: MODBUS read failed or short vals={vals}", flush=True)
                 return
 
             torque_raw = (vals[0] << 16) | vals[1]
+            tighten_time_ms = vals[3]
             angle_raw = (vals[4] << 16) | vals[5]
             result_code = vals[9]
+            print(f"[Kilews] poll: code={result_code} torque_raw={torque_raw} angle_raw={angle_raw} "
+                  f"time={tighten_time_ms}ms vals[0..9]={vals}", flush=True)
+            status_vals = self.kilews.modbus.read_registers(4305, 4)
+            current_count = None
+            if status_vals and len(status_vals) >= 4:
+                self.kilews.current_job = status_vals[0]
+                self.kilews.current_seq = status_vals[1]
+                self.kilews.current_step = status_vals[2]
+                self.kilews.current_count = status_vals[3]
+                current_count = int(status_vals[3])
 
             # Update Kilews device state in-place
             self.kilews.torque_raw = torque_raw
             self.kilews.angle_raw = angle_raw
             self.kilews.result_code = result_code
+            self.kilews.tighten_time_ms = tighten_time_ms
 
             if result_code in (4, 5, 6, 7, 8):  # a result is available
+                result_signature = (result_code, torque_raw, angle_raw, tighten_time_ms)
+                count_delta = None
+                if current_count is not None:
+                    count_delta = current_count - self._tightening_baseline_count
+                log_poll(
+                    "result="
+                    f"code={result_code} torque_raw={torque_raw} angle_raw={angle_raw} "
+                    f"time_ms={tighten_time_ms} count={current_count} count_delta={count_delta} "
+                    f"baseline={self._tightening_baseline_signature} last={self._last_kilews_signature}"
+                )
+
+                # Skip if this is the same old result we saw at baseline
+                if self._tightening_baseline_signature is not None:
+                    if result_signature == self._tightening_baseline_signature:
+                        if count_delta is None or count_delta <= 0:
+                            print(f"[Kilews] SKIP: matches baseline sig={self._tightening_baseline_signature} count_delta={count_delta}", flush=True)
+                            return
+                else:
+                    # No baseline yet — set it now from this first reading
+                    self._tightening_baseline_signature = result_signature
+                    self._tightening_baseline_count = current_count if current_count is not None else 0
+                    print(f"[Kilews] SET baseline: sig={self._tightening_baseline_signature} count={self._tightening_baseline_count}", flush=True)
+                    return
+
+                if result_signature == self._last_kilews_signature:
+                    print(f"[Kilews] SKIP: duplicate last_sig={self._last_kilews_signature}", flush=True)
+                    return
                 torque = self.kilews._decode_torque(torque_raw)
                 angle = self.kilews._decode_angle(angle_raw)
-                result = "OK" if result_code == 4 else "NG"
+                result = "OK" if result_code in (4, 5, 6) else "NG"
 
-                bolt_no = self.next_bolt_no()
+                bolt_no = self.next_unrecorded_bolt_no()
+                if count_delta is not None and 1 <= count_delta <= len(self.bolts):
+                    bolt_no = count_delta
+                print(f"[Kilews] bolt_no={bolt_no} count_delta={count_delta} next_waits={bolt_no}", flush=True)
                 if 1 <= bolt_no <= len(self.bolts):
                     bolt = self.bolts[bolt_no - 1]
-                    if bolt.result == "WAIT":
+                    if bolt.result == "WAIT" or bolt.torque_nm is None or bolt.angle_deg is None:
+                        self._last_kilews_signature = result_signature
+                        self._tightening_last_progress_at = now
                         bolt.torque_nm = torque
                         bolt.angle_deg = angle
                         bolt.result = result
+                        print(f"[Kilews] WROTE bolt{bolt_no}: torque={torque:.3f} angle={angle:.1f} result={result}", flush=True)
+                        if self.current_record_id is not None:
+                            self.current_record = self.storage.update_record(
+                                self.current_record_id,
+                                **{
+                                    f"bolt{bolt_no}_torque": round(torque, 2),
+                                    f"bolt{bolt_no}_angle": round(angle, 2),
+                                    f"bolt{bolt_no}_result": result,
+                                },
+                            )
                         self._automation_status["tightening_progress"] = (
                             f"螺栓 {bolt_no}: {torque:.2f} Nm / {angle:.1f}° / {result}"
                         )
@@ -510,10 +901,22 @@ class StationWorkflow:
                             "tightening.result",
                             f"螺栓{bolt_no}: {torque:.2f} Nm / {angle:.1f}° / {result}",
                         )
+                        log_poll(
+                            f"recorded bolt{bolt_no} torque={torque:.2f} angle={angle:.1f} result={result}"
+                        )
                         self.write_plc_outputs(current_bolt_no=bolt_no)
+                    else:
+                        log_poll(
+                            f"bolt{bolt_no} already recorded result={bolt.result} "
+                            f"torque={bolt.torque_nm} angle={bolt.angle_deg}"
+                        )
+                else:
+                    log_poll(f"computed invalid bolt_no={bolt_no}")
 
             # Check if all bolts done
-            if all(b.result in {"OK", "NG"} for b in self.bolts):
+            if self._all_bolts_have_results() or (
+                plc_state.m_plc_tightening_done and self._all_bolts_have_results()
+            ):
                 self.state = "tightening_eval"
 
         except Exception as exc:
@@ -532,11 +935,14 @@ class StationWorkflow:
         """Evaluate all bolt results, write PLC M0.1, transition state."""
         final = "OK" if all(b.result == "OK" for b in self.bolts) else "NG"
 
-        # Write M0.1 (1=OK, 0=NG)
-        self.plc.write_outputs({"tightening_ok": (final == "OK")})
+        # Write M0.1 / M1.0
+        self.plc.write_outputs({
+            "tightening_ok": (final == "OK"),
+            "tightening_ng": (final == "NG"),
+        })
 
         if self.current_record_id is not None:
-            self.storage.update_record(
+            self.current_record = self.storage.update_record(
                 self.current_record_id,
                 plc_tightening_ok_sent=1,
             )
@@ -545,14 +951,18 @@ class StationWorkflow:
             self.state = "ng_wait_rework"
             self.alarm = Alarm("PART_NG", "拧紧结果 NG，请在 PLC 侧选择返修/放行")
         else:
-            self.state = "pending_scan"
+            self.state = "pending_scan" if self._qr_binding_required() else "complete"
             self.alarm = Alarm()
 
         self.current_record = self.storage.update_record(
             self.current_record_id,
             final_result=final,
-            status="WAIT_QR" if final == "OK" else "NG_WAIT_REWORK",
-            qr_bind_status="WAIT",
+            status=(
+                "WAIT_QR"
+                if final == "OK" and self._qr_binding_required()
+                else ("COMPLETED" if final == "OK" else "NG_WAIT_REWORK")
+            ),
+            qr_bind_status="WAIT" if self._qr_binding_required() else "SKIPPED",
             completed_at=now_text(),
             alarm_code=self.alarm.code,
             alarm_message=self.alarm.message,
@@ -560,6 +970,10 @@ class StationWorkflow:
         self.storage.add_event(
             self.current_record_id, "part.final", f"整件结果：{final} → PLC M0.1={'1' if final == 'OK' else '0'}"
         )
+        if final == "OK" and self._qr_binding_required():
+            self._trigger_scanner_start("tightening_ok")
+        elif final == "OK":
+            self._complete_without_scan("QR binding disabled -> auto complete after tightening")
         self._auto_capture("tightening_done")
         self.write_plc_outputs()
         print(f"[Automation] Tightening final: {final} → PLC M0.1={'1' if final == 'OK' else '0'}")
@@ -568,7 +982,7 @@ class StationWorkflow:
         """Write M0.2 = 1 to PLC after QR scan."""
         self.plc.write_outputs({"scan_complete": True})
         if self.current_record_id is not None:
-            self.storage.update_record(
+            self.current_record = self.storage.update_record(
                 self.current_record_id,
                 plc_scan_complete_sent=1,
             )
@@ -629,6 +1043,7 @@ class StationWorkflow:
         self.alarm = Alarm()
         self.started_at = now_text()
         self.updated_at = self.started_at
+        self._reset_kilews_live_view()
 
         # Reset detectors for new cycle
         self.stability_detector.reset()
@@ -691,8 +1106,13 @@ class StationWorkflow:
         product_cfg = self.product_config()
         vision_ok = self.vision["status"] == "OK" or not product_cfg["enable_vision_interlock"]
         ready = vision_ok and self.plc_ready() and self.kilews.connected
-        if ready:
+        if ready and self.state != "tightening":
             self.state = "tightening"
+            if not self.automation_enabled and isinstance(self.kilews, KilewsDevice):
+                now = _time.monotonic()
+                self._reset_tightening_tracking(now)
+                self._automation_status["tightening_progress"] = "拧紧许可已满足，等待拧紧完成..."
+                self._prime_tightening_baseline()
         return ready
 
     def simulate_tightening(self, bolt_no: int, torque_nm: float, angle_deg: float) -> dict[str, Any]:
@@ -734,25 +1154,34 @@ class StationWorkflow:
         return "OK" if torque_ok and angle_ok else "NG"
 
     def finish_if_all_bolts_done(self) -> None:
-        if not all(bolt.result in {"OK", "NG"} for bolt in self.bolts):
+        if not self._all_bolts_have_results():
             return
         final = "OK" if all(bolt.result == "OK" for bolt in self.bolts) else "NG"
         if final == "NG":
             self.state = "ng_wait_rework"
             self.alarm = Alarm("PART_NG", "拧紧结果 NG，请在 PLC 侧选择返修/放行")
         else:
-            self.state = "pending_scan"
+            self.state = "pending_scan" if self._qr_binding_required() else "complete"
             self.alarm = Alarm()
         self.current_record = self.storage.update_record(
             self.current_record_id,
             final_result=final,
-            status="WAIT_QR" if final == "OK" else "NG_WAIT_REWORK",
-            qr_bind_status="WAIT",
+            status=(
+                "WAIT_QR"
+                if final == "OK" and self._qr_binding_required()
+                else ("COMPLETED" if final == "OK" else "NG_WAIT_REWORK")
+            ),
+            qr_bind_status="WAIT" if self._qr_binding_required() else "SKIPPED",
             completed_at=now_text(),
             alarm_code=self.alarm.code,
             alarm_message=self.alarm.message,
         )
         self.storage.add_event(self.current_record_id, "part.final", f"整件结果：{final}")
+
+        if final == "OK" and self._qr_binding_required():
+            self._trigger_scanner_start("manual_finish_ok")
+        elif final == "OK":
+            self._complete_without_scan("QR binding disabled -> manual complete")
 
     def set_rework_choice(self, choice: str) -> dict[str, Any]:
         self.require_record()
@@ -766,13 +1195,40 @@ class StationWorkflow:
             self.current_record_id,
             rework_choice=normalized,
             rework_count=count,
-            status="WAIT_QR",
-            qr_bind_status="WAIT",
+            status="WAIT_QR" if self._qr_binding_required() else "COMPLETED",
+            qr_bind_status="WAIT" if self._qr_binding_required() else "SKIPPED",
         )
-        self.state = "pending_scan"
+        self.state = "pending_scan" if self._qr_binding_required() else "complete"
         self.alarm = Alarm()
         self.storage.add_event(self.current_record_id, "rework.choice", f"PLC返修选择：{normalized}")
         self.write_plc_outputs()
+        if self._qr_binding_required():
+            self._trigger_scanner_start("rework_release")
+        else:
+            self._complete_without_scan("QR binding disabled -> rework release complete")
+        return self.snapshot()
+
+    def skip_scan(self) -> dict[str, Any]:
+        self.require_record()
+        if self.state != "pending_scan":
+            self.alarm = Alarm("SCAN_NOT_ALLOWED", "扫码跳过只允许在待扫码阶段执行")
+            self.write_plc_outputs()
+            return self.snapshot()
+        self.current_record = self.storage.update_record(
+            self.current_record_id,
+            qr_bind_status="SKIPPED",
+            status="COMPLETED",
+            scanned_at=now_text(),
+            alarm_code="",
+            alarm_message="",
+        )
+        self.storage.add_event(self.current_record_id, "qr.skipped", "扫码已跳过")
+        self.state = "complete"
+        self.alarm = Alarm()
+        if self.automation_enabled:
+            self._signal_plc_scan_complete()
+        else:
+            self.write_plc_outputs()
         return self.snapshot()
 
     def scan_qr(self, qr_code: str) -> dict[str, Any]:
@@ -785,6 +1241,7 @@ class StationWorkflow:
             return self.snapshot()
         product_cfg = self.product_config()
         rule = product_cfg["qr_rule"]
+        reject_duplicate_qr = bool(product_cfg.get("reject_duplicate_qr", True))
         if not re.fullmatch(rule, code):
             self.current_record = self.storage.update_record(
                 self.current_record_id,
@@ -794,12 +1251,23 @@ class StationWorkflow:
             )
             self.alarm = Alarm("QR_RULE_NG", "二维码不符合当前规则")
             self.write_plc_outputs()
+            self._trigger_scanner_start("qr_rule_ng_retry")
             return self.snapshot()
         try:
-            self.current_record = self.storage.bind_qr(self.current_record_id, code)
+            self.current_record = self.storage.bind_qr(
+                self.current_record_id,
+                code,
+                reject_duplicate=reject_duplicate_qr,
+            )
         except ValueError as exc:
+            if self.current_record_id is not None:
+                latest = self.storage.get_record(self.current_record_id)
+                if latest is not None:
+                    self.current_record = latest
             self.alarm = Alarm("QR_DUP", str(exc))
+            self.storage.add_event(self.current_record_id, "qr.duplicate", code)
             self.write_plc_outputs()
+            self._trigger_scanner_start("qr_duplicate_retry")
             return self.snapshot()
         self.state = "complete"
         self.alarm = Alarm()
@@ -828,6 +1296,8 @@ class StationWorkflow:
     def write_plc_outputs(self, current_bolt_no: int | None = None) -> None:
         plc_state = self.plc.read_state()
         product_cfg = self.product_config()
+        final_result = self.current_record.get("final_result") if self.current_record else ""
+        qr_bind_status = self.current_record.get("qr_bind_status") if self.current_record else ""
         outputs: dict[str, Any] = {
             "pc_online": True,
             "vision_ok": self.vision["status"] == "OK",
@@ -839,7 +1309,7 @@ class StationWorkflow:
             "part_ng": self.current_record is not None and self.current_record.get("final_result") == "NG",
             "qr_bound": self.current_record is not None and self.current_record.get("qr_bind_status") == "BOUND",
             "wait_qr_binding": self.state == "pending_scan",
-            "data_saved": self.current_record is not None,
+            "data_saved": self.current_record is not None and self.current_record.get("status") == "COMPLETED",
             "current_bolt_no": current_bolt_no or self.next_bolt_no(),
             "bolt1_torque_x100": self.scaled(self.bolts[0].torque_nm) if len(self.bolts) > 0 else 0,
             "bolt1_angle_x100": self.scaled(self.bolts[0].angle_deg) if len(self.bolts) > 0 else 0,
@@ -851,12 +1321,12 @@ class StationWorkflow:
             "angle_target_x100": self.scaled(product_cfg.get("angle_target_deg")),
             "angle_min_x100": self.scaled(product_cfg.get("angle_min_deg")),
             "angle_max_x100": self.scaled(product_cfg.get("angle_max_deg")),
+            "product_ready": self.state in {"plc_handshake", "tightening_wait", "tightening_eval", "pending_scan", "ng_wait_rework", "complete"},
+            "tightening_ok": final_result == "OK",
+            "tightening_ng": final_result == "NG",
+            "scan_complete": self.state == "complete",
+            "disable_scan": qr_bind_status == "SKIPPED",
         }
-        # M-bit automation signals
-        if self.state == "plc_handshake":
-            outputs["product_ready"] = True
-        if self.state == "complete":
-            outputs["scan_complete"] = True
         self.plc.write_outputs(outputs)
         self.updated_at = now_text()
 
@@ -865,6 +1335,77 @@ class StationWorkflow:
             if bolt.result == "WAIT":
                 return bolt.bolt_no
         return len(self.bolts)
+
+    def next_unrecorded_bolt_no(self) -> int:
+        for bolt in self.bolts:
+            if bolt.torque_nm is None or bolt.angle_deg is None:
+                return bolt.bolt_no
+        return self.next_bolt_no()
+
+    def _hydrate_bolts_from_record(self) -> None:
+        if not self.current_record:
+            return
+        for bolt in self.bolts:
+            idx = bolt.bolt_no
+            torque = self.current_record.get(f"bolt{idx}_torque")
+            angle = self.current_record.get(f"bolt{idx}_angle")
+            result = self.current_record.get(f"bolt{idx}_result")
+            if torque is None and angle is None and not result:
+                continue
+            if bolt.torque_nm is None and torque is not None:
+                bolt.torque_nm = round(float(torque), 2)
+            if bolt.angle_deg is None and angle is not None:
+                bolt.angle_deg = round(float(angle), 2)
+            if bolt.result == "WAIT" and result:
+                bolt.result = str(result)
+
+    def _apply_live_kilews_result_fallback(self, now: float) -> None:
+        if not isinstance(self.kilews, KilewsDevice):
+            return
+        if self.current_record_id is None:
+            return
+        if self.state not in {"tightening", "tightening_wait", "tightening_eval", "pending_scan", "complete"}:
+            return
+        result_code = int(self.kilews.result_code or 0)
+        if result_code not in (4, 5, 6, 7, 8):
+            return
+        result_signature = (
+            int(self.kilews.result_code or 0),
+            int(self.kilews.torque_raw or 0),
+            int(self.kilews.angle_raw or 0),
+            int(self.kilews.tighten_time_ms or 0),
+        )
+        if result_signature == self._last_kilews_signature:
+            return
+        if self._tightening_baseline_signature is not None and result_signature == self._tightening_baseline_signature:
+            return
+
+        bolt_no = self.next_unrecorded_bolt_no()
+        if not (1 <= bolt_no <= len(self.bolts)):
+            return
+        bolt = self.bolts[bolt_no - 1]
+        torque = self.kilews._decode_torque(int(self.kilews.torque_raw or 0))
+        angle = self.kilews._decode_angle(int(self.kilews.angle_raw or 0))
+        result = "OK" if result_code in (4, 5, 6) else "NG"
+
+        bolt.torque_nm = round(float(torque), 2)
+        bolt.angle_deg = round(float(angle), 2)
+        bolt.result = result
+        self._last_kilews_signature = result_signature
+        self._tightening_last_progress_at = now
+        self.current_record = self.storage.update_record(
+            self.current_record_id,
+            **{
+                f"bolt{bolt_no}_torque": bolt.torque_nm,
+                f"bolt{bolt_no}_angle": bolt.angle_deg,
+                f"bolt{bolt_no}_result": result,
+            },
+        )
+        self.storage.add_event(
+            self.current_record_id,
+            "tightening.result.fallback",
+            f"螺栓{bolt_no}: {bolt.torque_nm:.2f} Nm / {bolt.angle_deg:.1f}° / {result}",
+        )
 
     @staticmethod
     def scaled(value: float | None) -> int:
@@ -882,7 +1423,10 @@ class StationWorkflow:
 
     def snapshot(self) -> dict[str, Any]:
         self.refresh_tightening_permission()
-        self.write_plc_outputs()
+        now = _time.monotonic()
+        if now - self._last_snapshot_output_at >= self._snapshot_output_interval_s:
+            self.write_plc_outputs()
+            self._last_snapshot_output_at = now
         # Update vision with latest inference (also works outside automation)
         if self.camera is not None:
             inference = self.camera.get_latest_inference()
@@ -892,8 +1436,16 @@ class StationWorkflow:
                 self.vision["o_ring_ok"] = inference.get("o_ring_ok", False)
                 self.vision["confidence"] = inference.get("confidence", 0.0)
         plc_state: PlcState = self.plc.read_state()
+        if not self.automation_enabled:
+            if self.state in {"tightening", "tightening_wait"}:
+                self._poll_kilews_results(now, plc_state)
+            if self.state == "tightening_eval":
+                self._finalize_tightening()
         if self.current_record_id is not None:
             self.current_record = self.storage.get_record(self.current_record_id)
+            self._hydrate_bolts_from_record()
+            self._apply_live_kilews_result_fallback(now)
+            self._hydrate_bolts_from_record()
         product_cfg = self.product_config()
         return {
             "state": self.state,
@@ -909,8 +1461,9 @@ class StationWorkflow:
             "last_qr": self.last_qr,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
-            "kilews": self.kilews.status_dict(),
+            "kilews": self._kilews_snapshot(),
             "automation": dict(self._automation_status),
+            "camera": dict(self.camera_status),
             "settings_summary": {
                 "product_model": product_cfg["product_model"],
                 "recipe_no": product_cfg["recipe_no"],

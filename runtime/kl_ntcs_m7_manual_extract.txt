@@ -1,0 +1,1018 @@
+--- PAGE 1 ---
+KL-NTCS-M7 User Manual
+Model: KL-NTCS-M7
+KILEWS INDUSTRIAL CO., LTD.
+https://www.kilews.com.tw
+Y2F242-1-003
+20251114
+
+
+--- PAGE 2 ---
+1
+INDEX
+1. Product specification introduction................................................................. 2
+2. Appearance....................................................................................................... 3
+3. First page........................................................................................................... 4
+4. Dashboard......................................................................................................... 4
+4-1. Login Settings............................................................................................................... 4
+5. Function List..................................................................................................... 5
+5-1. Fastening Results.......................................................................................................... 5
+5-1-1. Information / Retrieval / Chart Functions Overview..................................................................... 6
+5-2. Job Edit......................................................................................................................... 7
+5-2-1. job Edit....................................................................................................................... 7
+5-2-2. Sequence..................................................................................................................... 8
+5-2-3. Step............................................................................................................................ 10
+5-2-4. I/O Import................................................................................................................... 12
+5-2-5. I/O Output................................................................................................................... 14
+5-3. Data............................................................................................................................... 15
+5-3-1. Historic data................................................................................................................ 15
+5-3-2. Logging Information..................................................................................................... 15
+5-3-3. Graphic File Data......................................................................................................... 16
+5-3-4. Configuration............................................................................................................... 16
+5-3-5. Sustain........................................................................................................................ 16
+5-4. Setting........................................................................................................................... 17
+5-4-1. Controller.................................................................................................................... 17
+5-4-2. TOOl.......................................................................................................................... 19
+5-4-3. SysteM........................................................................................................................ 20
+5-4-4. Barcode....................................................................................................................... 21
+5-4-5. Internet....................................................................................................................... 22
+5-4-6. Update........................................................................................................................ 22
+5-5. Information.................................................................................................................... 23
+5-5-1. TOOl.......................................................................................................................... 23
+5-5-2. Controller.................................................................................................................... 23
+5-5-3. Manual........................................................................................................................ 24
+5-6. Chart.............................................................................................................................. 25
+6. Description of external export control........................................................... 26
+7. Description of external import control........................................................... 26
+8. Description of display status code................................................................... 27
+8-1. Abnormal messages from controller/screwdriver/lock information............................. 27
+9. Modbus Instruction.......................................................................................... 28
+
+--- PAGE 3 ---
+2
+1. Product specification introduction
+Model KL-NTCS-M7
+Import Voltage AC 115V / 230V
+Import Frequency 50 - 60Hz
+Import Current 6.3A
+Import Voltage DC 40V
+Export Current Max 9A
+Export Power 360W
+Size (mm) 210*185*134
+Weight (g) 3467
+DC screwdriver model:
+SNT-CSM105 series
+Working Time
+1s ON / 3s OFF
+SNT-CS303 series 1s ON / 3s OFF
+SNT-CS505 series 1s ON / 3s OFF
+SNT- CSM712 series 1s ON / 3s OFF
+SNT- CSM960 series 1s ON / 3s OFF
+
+--- PAGE 4 ---
+3
+2. Appearance
+2.1 Panel
+2.2 Bottom
+1 Tool connection seat
+2 Wired communication port
+3 Export/configuration file
+export/import/update software/scanner for
+lock data, USB type-A
+4 Export/configuration file
+export/import/update software/
+5 scanner for lock data, USB type A
+6 Power cord socket and power switch
+7 LED Indicator: The lights will turn on for
+normal operation and standby/sleep mode. If
+the lights do not turn on, it indicates a
+malfunction.
+8 Prcol export port
+9 Export screwdriver signal port
+10 Import control screwdriver signal port
+2.3 Upper cover
+1.DC fuse seat (incl. 15A fuse)
+2. Grounding terminal seat (FG)
+2.
+3.
+4.
+5.
+6.
+8.
+7.
+10.
+9.
+1.
+1.
+2.
+
+
+--- PAGE 5 ---
+4
+3. First page
+4. Dashboard
+4-1. Login
+Operation
+1. Before Login：Stays on the monitoring view (homepage icons only show: Fastening Results / Information / Login).
+2. Login Account：guest Password: 0000 (default value)
+3. Select Login
+Login
+1. Enter Homepage：Available functions: Operation / Job Edit / Data / Setting / Information / Graph / Logout
+Logout：Exit the permission-based operation page and return to the monitoring view.
+Homepage Functions Description
+Operation Displays fastening information, screwdriver status, barcode, input/output, and function buttons
+Information Displays tool, controller, and manual download information.
+Login Access the permission management page with role-based usage via account and password.
+
+
+--- PAGE 6 ---
+5
+5. Function List
+5-1. Fastening Results
+Homepage Functions Description
+1. Return to Main
+Screen Tap to return to the main screen.
+2. Work Status
+Enabled: Tool is operational.
+Disabled: Tool is prohibited from running; screwdriver display is dimmed.
+3. System Time Displays system time.
+4. Job Name Displays the currently executed job name.
+5. Call Call other jobs / DEMO
+6. Process Name Displays the current process name.
+7. Total seq Current process number / total Total seq.
+8. Seq Clear Reset to the first process.
+9. Step ID Displays the current step ID.
+10. Target Torque Displays the set target torque.
+11. Torque Value Displays torque value during operation/fastening.
+12. Torque Unit Displays the configured torque unit.
+13. TR Displays current screw count / total screw count.
+14. Fastening Time Displays total fastening time.
+15. Threshold Angle Displays the set threshold angle.
+16. Step Angle Displays step angle during operation.
+17. RPM Displays rotation speed during operation.
+18. Target Angle Displays the set target angle.
+19. Total Angle Displays total angle during operation.
+20. Barcode Displays scanned barcode.
+21. Fastening Result Displays fastening status (READY, OK, NG, NS, OK-SEQ, IOK-JOB, etc.).
+22. Messages Displays fastening messages, controller errors, or system interpretation messages.
+23. I/O Display/
+Chart/Modbus Can switch to displays input/output indicator lights or shows charts or Modbus.
+24. Control Functions
+1. Clear Screw Count：Resets the screw count.
+2. Confirm：Clears the current status.
+3. Enable：Tool is operational / Tool is enabled.
+4. Disable：Tool operation is prohibited.
+5. Skip：Skips the current process step.
+6. Information：Displays fastening job settings.
+7. Input / Output & Chart&
+Modbus：Click to toggle
+between input/output signals or
+charts or Modbus。
+
+
+--- PAGE 7 ---
+6
+5-1-1. Charts & Modbus / Retrieval / Information Page ntroduction
+1. Chart Switch to view Charts / Modbus.
+2. Call
+Call Other Job
+Compensated Target Torque: Enter the actual torque value to automatically calculate
+and populate the STEP compensation.
+3. Information Fastening Step Parameter List
+
+
+--- PAGE 8 ---
+7
+5-2. Job Edit
+5-2-1. Job Edit
+Add Job
+Job Edit Description
+Call Open Job Call, call fastening job.
+Add Open Add Job interface.
+Edit Edit the selected job.
+Copy Copy the selected job, including processes and steps.
+Delete Delete the selected job.
+I/O Import Open I/O Input Settings interface.
+I/O Export Open I/O Output Settings interface.
+Enter next level (Process Management).
+Add Job Description
+Job ID Displays the newly added Job ID (e.g., JOB-2 as shown in the example).
+Job Name Supports English (uppercase & lowercase), numbers, and symbols.
+Job Completion Output
+(OK Job)
+Off： No completion output (OK-JOB).
+On： Completion output (OK-JOB) is enabled.
+Default：On
+OK Job Stop
+Off：When the action is completed, the screwdriver will not stop, and it will not
+affect the next startup.
+On：When the fastening job is completed, the screwdriver will be immediately
+locked. The user must press the "Confirm" key to release forward rotation. (For
+I/O control, this corresponds to an external Confirm signal.)
+Default: Off
+
+
+--- PAGE 9 ---
+8
+5-2-2. Process Management
+New Sequence
+Process
+Management Description
+Job ID / Name Displays the Job ID/Name selected from the previous page (Example: 1 / JOB-1)
+Screw Count Displays the screw count of the process.
+□ Checked: the process will be executed. Unchecked: the process will not be executed.
+New Opens the interface to New a new process.
+Edit Edits the selected process.
+Copy Copies the selected process along with its steps.
+Delete Deletes the selected process.
+Enters the next level (Step Management).
+
+
+--- PAGE 10 ---
+9
+Add Step Description
+Job ID Select Edit job ID.
+Seq ID Select Edit Seq ID.
+Seq Name Support English (capital and small characters), numbers and symbols.
+Tightenimg Repeal Total lock screw number in Setting Sequence.
+Timeout (sec) Set the operation time for a single screw. (Range: 0.1–60.0 sec, Default: 20 sec)
+Stop on NG
+Set the processing method selected when screwdriver lock is wrong: No / 1-9
+1~9 :
+Setting 1: Lock screwdriver if trigger-once lock is error,
+Setting 2: Continuous lock error; lock screwdriver if trigger-twice lock is error…
+and so on; if anyone lock is OK, make re-calculation.
+Enable function 1~9: When the error signal "NS" appears, the screwdriver is locked
+immediately; user needs to press the "Confirm" button to confirm to release. (For the I/O part,
+confirm the Confirm signal externally, and confirm that the screwdriver can still remove the
+screw)
+No: When the error signal "NG" appears, the screwdriver won’t stop; it won’t affect the next
+start of the screwdriver, only a warning will be issued.
+Default: 0
+DT:
+Screw Waiting Time
+(sec)
+Screw Interval Time (DT):
+The time between receiving a judgment result (e.g., OK, NG) for one screw and triggering the
+next screw fastening.
+If the waiting time exceeds the set value, the controller will display a warning message/icon and
+sound an alarm until fastening is restarted.
+(Range: 1–99 sec, Default: 0 = disabled)
+TT:
+Sequence Completion
+Time (sec)
+Sequence Completion Time (TT):
+The total time from the first trigger in a sequence to the fastening of the last screw.
+If the sequence completion time exceeds the set value, the controller will display a warning
+message/icon and sound an alarm until all screws in the sequence are fastened.
+(Range: 1–6000 sec, Default: 0 = disabled)
+OK Seq:
+Sequence OK
+OFF: No sequence completion signal (OK-SEQ) is export.
+ON: Export sequence completion signal (OK-SEQ).
+Default: ON.
+OK Seq Sto:
+Stop Sequence on OK
+The processing method selected when the total number of screws in the Setting Sequence is
+counted to complete the action.
+OFF: The screwdriver won’t stop when the action is completed; nor will it affect the next start
+of the screwdriver.
+ON: When the number of Sequence screws is locked, the screwdriver will be locked
+immediately; user must press the "Confirm" button to confirm that the forward rotation can be
+released. (If it is the I/O part, it is an external confirmation signal)
+Default: OFF.
+Accumulate:
+Accumulate Angle
+Accumulate Angle:
+Set whether clockwise and counterclockwise angles offset each other in accumulation.
+(Default: OFF)
+Upper Total Angle
+Limit (°)
+Sets the upper limit of the total angle for the process.
+(Range: 1–30600; 0 = Disabled; Default: 0)
+Lower Total Angle
+Limit (°)
+Sets the lower limit of the total angle for the process.
+(Range: 1–30600; 0 = Disabled; Default: 0)
+Angle Calculation  □ If unchecked, this step’s angle will not be included. 
+Reverse Co:
+Reverse Count
+OFF: Disable reverse screw counting.
+(Default: OFF)
+ON: Enable reverse screw counting.
+NG Reverse Set whether to perform screw removal before re-tightening when fastening fails.
+(Default: OFF)
+Reverse Mode
+Auto: Reverse torque = max torque × 1.1,
+Direction = opposite of last step,
+Speed = 50% of max driver speed,
+Threshold torque = 0,
+Threshold angle = 0.
+Custom: Execute based on user-defined parameters.
+(Default: Auto)
+Speed (RPM) Set the driver speed for screw removal.
+(Range: see driver specification, Default: 300 RPM)
+Torque Threshold Set the torque threshold for detecting screw removal.
+
+--- PAGE 11 ---
+10
+If reverse screw count is enabled, counting starts only after exceeding this torque.
+(Default: 0.000)
+Angle Threshold Set the angle threshold for screw removal.
+(Default: 0 = disabled)
+Direction Select Counterclockwise / Clockwise.
+Focre (%)
+Reverse Focre (Manual Setting):
+Set the maximum force for screw removal.
+  On (1–100%)  Unlimited  Off Default: On (50%)
+5-2-3. Step
+New Step
+Step Setting Description
+ID / Name: Display the selected Job ID, Sequence ID, and Job Name from the previous page.
+(Example: 1 / 1 / JOB-1)
+New Open the New Stepinterface.
+Edit Edit the selected step
+Copy Copy the selected step.
+Delete Delete the selected step.
+
+
+--- PAGE 12 ---
+11
+Step Parameters Description
+Job ID Display the selected Edit job ID. (The example in the figure shows 1)
+Seq ID Display Sequence ID. (The example in the figure shows 1)
+Seq Name Display the selected Sequence Name. (Example: SEQ-1)
+Step ID Display Step ID.
+Step Name Support English (capital and small characters), numbers and symbols
+Target Torque Set the screwdriver Target Torque value.
+Hi Torque The upper limit of Setting Torque, the upper limit cannot exceed 110% of the maximum torque,
+Lo Torque The lower limit of torque setting; the default is 0.0 N-m.
+Monitoring Torque
+by Window □ When checked, the upper and lower limits are set in percentage (%).
+Upper(%) The upper limit of angle setting. (Range: 1~30600, default: 30600)
+Lower(%) The lower limit of angle setting. (Range: 0~30599, default: 0)
+Intenupt Alarm If the press plate is released before reaching the tightening target and the motor stops, determine
+whether to trigger NG warning.
+Over Angle Stop If the tightening target is torque or time, determine whether to stop when exceeding the angle upper
+limit.
+Direction Set the screwdriver tightening direction: Clockwise (CW) / Counterclockwise (CCW).
+(Default: Clockwise (CW))
+Delay (sec) Set the delay time before proceeding to the next step after reaching the target.
+Rotation Speed
+(RPM)
+Rotation Speed (RPM):
+Set the screwdriver rotation speed (revolutions per minute).
+Joint Offset
+Positive: Actual torque increases.
+Negative: Actual torque decreases.
+Adjust this value for fine adjustment; making the actual torque value of the screwdriver lock is closer
+to the torque value displayed by the Controller. (KTM torque meter is an optional product)
+Default: Positive 0.00.
+Threshold Mode
+OFF: Disable function
+Torque: Threshold based on torque
+Angle: Threshold based on angle
+(Default: OFF)
+Threshold Torque
+Angle
+When the torque reaches the set threshold torque value, the controller begins calculating the
+tightening angle, and stops within the upper/lower torque range = OK.
+Angle Threshold
+(deg)
+When the angle reaches the set threshold angle value, the controller begins calculating the
+tightening angle, and stops within the upper/lower angle range = OK.
+Downshift Mode
+OFF: Disable function
+Torque: Deceleration based on torque
+Angle: Deceleration based on angle
+(Default: OFF)
+Downshift Torque
+When the torque reaches the set deceleration torque value, the screwdriver speed will reduce until
+stopping within the upper/lower torque limit = OK.
+(Default: 0.0 Nm)
+Downshift Angle
+When the set deceleration angle value is reached, the screwdriver speed will reduce until
+stopping within the upper/lower angle limit = OK.
+(Default: 0)
+Downshift Speed
+(RPM) Set the screwdriver speed when the deceleration torque value is reached.
+Save Save the settings on this page.
+
+--- PAGE 13 ---
+12
+5-2-4. I/O Import
+I/O Import Description
+Edit job Select Execution Job
+Unified
+When an execution job is selected, the system will run only the parameters of that job. Other preset
+parameters will not be executed.
+After selecting a job, click this button (Yellow background / Black text) to enable the All Job
+function.
+Click again (White background / Black text) to disable the All Job function.
+New Open the Add Input interface.
+Edit Edit the selected event.
+Copy Copy the selected event.
+Delete Delete the selected event.
+Description
+Mode Event Options
+Description
+Disable / Enable / Clear / Confirm / Start / Reverse / Sequence Clear /
+Restart /
+One-time Detection /Custom 1 / Custom 2 / Custom 3 / Custom 4 / Custom 5
+Save Save: Save the settings on this page.
+When the event "One-time Detection" is selected, the Workpiece Reset
+Confirmation field will be displayed.
+No: Workpiece reset does not require pressing the confirmation button.
+Yes: Workpiece reset requires pressing the confirmation button.
+Signal Selection Blank (Not selected)
+High Level
+Low Level
+
+
+--- PAGE 14 ---
+13
+External Input: Binary Switching Job
+Steps for Binary Job Switching
+1. First Input (IN_1): Short-circuit (ON) → enter binary job switching mode. (Note 1) 
+2. Convert the target Job ID number into 8-bit binary (decimal → binary). If the binary number has fewer than 8 digits, 
+add leading zeros. (Note 2)
+3. The converted 8-bit Job ID is mapped from high to low bit onto Input Group 5 (IN_5) → Input Group 12 (IN_12). 
+0→ OFF (Open) 
+1→ ON (Short) 
+4. After confirming that all 8 bits are entered correctly, use Second Input (IN_2): Short-circuit (ON) → confirm and 
+Operation switching.
+Note 1:IN_1 = OFF (Open): Normal event mode. IN_1 = ON (Short): Binary job switching mode.
+Note 2:
+Job ID range: 01 ~ 100
+Modbus Job ID: 221
+28 = 256, Binary representation: 8-bit (0000 0000 ~ 1111 1111 = total 256 jobs), covering all current job IDs.
+Example: 1.   Job(1) → Binary switch to Job(11) 
+11(10) → 0000 1011(2)
+(IN_ 1) (IN_ 2) (IN_ 5) (IN_ 6) (IN_ 7) (IN_ 8) (IN_ 9) (IN_10) (IN_11) (IN_12)
+0 0 0 0 0 0 0 0 0 0
+⇒ (IN_ 1) (IN_ 2) (IN_ 5) (IN_ 6) (IN_ 7) (IN_ 8) (IN_ 9) (IN_10) (IN_11) (IN_12)
+1 1 0 0 0 0 1 0 1 1
+⇒ Example: Switch to Job (11)
+2.   Example: From Job (11) → Binary switch to Job (101) 
+101(10) → 0110 0101(2)
+(IN_1) (IN_2) (IN_ 5) (IN_ 6) (IN_ 7) (IN_ 8) (IN_ 9) (IN_10) (IN_11) (IN_12)
+1 0 0 0 0 0 1 0 1 1
+⇒ (IN_ 1) (IN_ 2) (IN_ 5) (IN_ 6) (IN_ 7) (IN_ 8) (IN_ 9) (IN_10) (IN_11) (IN_12)
+1 1 0 1 1 0 0 1 0 1
+⇒ Example: Switch to Job (101)
+
+--- PAGE 15 ---
+14
+5-2-5. I/O Output
+I/O Output Description
+Job Job Selection
+Unified
+When a job is selected, only the output parameters of that job will be executed. Other jobs’original output settings
+remain unchanged. After selecting a job, click this button (Yellow background / Black text) to enable All Job function.
+Click again (White background / Black text) to disable All Job function.
+New Open the Add Output interface.
+Edit Edit the selected event.
+Copy Copy the selected event.
+Delete Delete the selected event.
+Test Check whether the indicator light is working correctly.
+Output Settings Description
+Select Event, Signal, and Time.
+Event Options: OK / NG / Over Upper Limit / Under
+Lower Limit / Sequence Complete Signal / Job Complete
+Output /
+Motor Signal / Start Signal / Reverse Screw / Barcode Stop
+/ Barcode / Custom 1 / Custom 2 / Custom 3 / Custom 4 /
+Custom 5
+Signal Modes :
+Continuous Output: The indicator light remains on when
+the screwdriver stops. It turns off when the screwdriver
+starts again.
+Single Cycle: The indicator light stays on for a duration set
+by the timer.
+Start Output: After the screwdriver stops, releasing the
+activation switch (press plate, downward press, external)
+will turn off the signal and indicator light.
+Time Setting: Set the indicator light duration (Range: 100–
+10,000 ms).
+IO Signal Detection: Independently detect if IO indicator
+light is abnormal.
+Save the current page configuration.
+
+
+--- PAGE 16 ---
+15
+5-3. Data
+5-3-1 Historic data
+Historic data Description
+Data Status Display: Choose to display All / OK / NG status.
+Historic data Display the latest 100 records, showing: ID, fastening time, Job ID, Process ID, Torque,
+Angle, Quantity, Total Quantity, Status, Barcode.
+5-3-2 Logging Information
+Export Historic Data Description
+Start Select start date (YYYY/MM/DD) and time. Must select date before time.
+End Select end date (YYYY/MM/DD) and time. Must select date before time.
+Destination Choose export destination: USB1 / USB2 / FTP.
+FTP File Size Limit: 500MB.
+Export Format Choose CSV / ZIP (compressed)
+Export Export fastening data based on above conditions.
+
+
+--- PAGE 17 ---
+16
+5-3-3. Graphic File Data
+5-3-4. Configuration
+5-3-5. Sustain
+Export Image Data Description
+Mode Choose Single / Continuous.
+Source Choose export source: USB1 / USB2 / FTP.
+FTP File Size Limit: 500MB.
+Export Export image data based on above conditions.
+Export / Import
+Configuration Settings Description
+Export Destination Source: Choose Export source: FTP / USB1 / USB2.
+FTP File Size Limit: 500MB.
+Export Configuration File (cfg)
+Database Ver Displays the current database version.
+Export Export configuration file based on the above conditions.
+Import Destination Import Source: Select import source: FTP / USB1 / USB2.
+FTP Upload File Size Limit: 500MB.
+Import File Select the configuration file to import (.cfg).
+Import Import the configuration file.
+Disk Storage Space Description
+Disk Storage Space Storage Usage: Displays the current disk usage percentage.
+Delete Fastening Data: Deletes fastening records.
+
+
+--- PAGE 18 ---
+17
+5-4. Setting
+5-4-1. Controller
+
+
+--- PAGE 19 ---
+18
+Controller Settings Description
+Device ID Displays the controller ID.
+(Range:1~255, Default:1) (Reboot required to take effect)
+Device Name Supports English (uppercase/lowercase), numbers, and symbols.
+(Range: 1–12 characters, Default: ntcs_7)
+Storage Warning (%) Set disk full warning threshold. (Range: 50%–95%, Default: 80%)
+Torque Filter Set a threshold to filter out smaller torque values.
+Downshift Torque (%)
+When the last step of a job targets torque, the downshift torque is calculated
+as a percentage of the target torque.
+If this parameter is enabled, all jobs will use this value as the basis for
+downshift torque.
+Downshift Speed (%)
+When downshift torque is enabled, the corresponding downshift speed is
+calculated as a percentage of the final step speed.
+If the calculated speed is lower than the screwdriver's minimum speed, the
+minimum speed will be used instead.
+Torque Unit kg·m / N·m / kg·cm / lb·in / N·cm.
+Circular Archive
+When system storage reaches the warning threshold, the system will
+automatically delete the oldest year's data log files.
+Default: Off.
+Counting Method
+Countdown / Count-up: Screw count decreases or increases based on the
+selected
+mode. Default: Countdown.
+Blackout Recovery
+On: Saves the screw count before the controller was powered off. Default:
+On
+Off: Saves the job before the controller was powered off.
+Buzzer Mode On / Off: Enable or disable the buzzer sound.
+Language Options: English / Traditional Chinese / Simplified Chinese Default: English
+Save Save the above settings.
+Modbus TCP / RTU. Default: TCP. (Reboot required to take effect)
+Button Access with
+Password
+Password protection for command buttons on the real-time monitoring screen:
+"Clear Seq button"、"Clear button "、"Confirm button "、"Enable button
+"、"Disable button "、"Skip button "
+Enter the password to activate these buttons.
+Save Save the above password settings.
+Background Color
+OK Sequence
+Process Completion Signal: Choose background color: Yellow / Green
+Default: Yellow。
+Background Color–
+OK Job
+Job Completion Signal: Choose background color: Yellow / Green
+Default: Yellow
+Save Save the above color settings.
+Load Default Reset: Restore factory default settings. Fastening data will be retained,
+configuration files will be cleared.
+Load Confirm factory reset.
+
+--- PAGE 20 ---
+19
+5-4-2. TOOl
+Tool Settings Description
+Start Mode
+ Press Plate: Tool operation is triggered by pressing the plate.
+ Downward Press: Tool operation is triggered by downward pressure.
+ Remote: Tool operation is triggered via IO or communication protocol (e.g.,
+Modbus).
+ Press Plate or Downward Press: Tool operation is triggered by either press plate or
+downward press.
+ Press Plate and Downward Press: Tool operation is triggered only when both press
+plate and downward press are activated simultaneously.
+ Press Plate or Remote: Tool operation is triggered by either press plate or
+IO/communication protocol.
+ Press Plate or Downward Press or Remote: Tool operation is triggered by any of the
+three methods.
+ Default: Press Plate
+LED:
+Tool Light
+Settings
+Off: LED remains off.
+Always On: LED remains on.
+During Operation: LED lights up while the tool is running.
+Before Start: LED lights up when the press plate or downward press is activated to a
+certain level but the motor has not yet started.
+Start Delay (Sec) Delay time before the next process can be started.
+Unit: Seconds (supports one decimal place)
+Lever Sensitivity
+(%)
+Sensitivity threshold for triggering tool operation via press plate.
+Range: 10%–90%
+Default: 50%
+Push Sensitivity
+(%)
+Sensitivity threshold for triggering tool operation via downward press.
+Range: 10%–90%
+Default: 50%
+Save Save the settings on this page.
+
+
+--- PAGE 21 ---
+20
+5-4-3. SysteM
+System Date Description
+Date Select Year / Month / Day.
+Time Select Hour / Minute / Second.
+Save Save the date and time settings.
+Screen Settings Description
+Screen Rotate Set the screen to rotate 180 degrees. The controller will automatically reboot
+after rotation.
+LED Brightness Select brightness level: 25% / 50% / 75% / 100%.
+Default: 100%
+Save Save the brightness settings.
+Password Settings Description
+New Password 4–10 digits (numbers only).
+Confirm Password 4–10 digits (numbers only).
+Save Save the password settings.
+
+
+--- PAGE 22 ---
+21
+5-4-4. Barcode
+System Management Description
+Barcode Master List Displays the list of created job IDs and barcode contents.
+Barcode
+Real-time display area for scanned barcodes.
+Barcode content does not support single quotes (‘).
+If single quotes are used, they will be replaced with double quotes (“) due to length constraints.
+From
+Set the starting character position for barcode matching in each job/process.Range: 1–100
+characters
+Default: 1
+Count
+Number of characters to match starting from the defined position.After scanning, the total character
+count of the barcode will be displayed. Range: 1–100 characters
+Default: 1
+Barcode Mode
+Barcode Mode SelectionBarcode Stop (BS)、Barcode Stop (Process Switchable)、Switch Job /
+Process Default: Barcode Stop
+Barcode Stop (BS) Job-based mode: After scanning the configured barcode, the system switches to
+the corresponding job and disables restrictions (Disable). Once the job is triggered, process
+switching or scanning any other barcode is not allowed during execution. The barcode will be
+cleared only after the job is completed.
+Barcode Stop (Process Switchable) - BS(Free):Job-based mode:
+After scanning the configured barcode, the system switches to the corresponding job and disables
+restrictions (Disable). Once the job is triggered, process switching and barcode scanning to switch
+jobs or processes (limited to barcodes listed in the master list) are allowed during execution.
+The barcode will be cleared only after the job is completed.
+Switch Job / Process (Switch Job / Seq.):Process-based mode: After scanning the configured
+barcode, the system switches to the corresponding process. After scanning, users can switch to
+different processes or switch to other jobs again. During execution, barcodes can be scanned at any
+time to update the fastening barcode data. The barcode will be cleared when the process is
+completed.
+Select Job Select the job corresponding to the scanned barcode.Only available in Switch Job / Process mode.
+In other modes, saved jobs cannot be selected and will appear grayed out.
+Select Sequence
+Select the process corresponding to the scanned barcode.
+The "Select Process" menu is only displayed when the "Switch Job / Process" mode is selected.
+Only in "Switch Job / Process" mode can you select other processes under the same job.
+Save Save the settings on this page.
+Delete Delete the selected barcode from the master list.
+
+
+--- PAGE 23 ---
+22
+5-4-5. Internet
+Network Settings Description
+Network Mode Dynamic Wired Network / Static Wired Network
+Network IP Displays the current IP address of the controller.
+Subnet Mask Configure the subnet mask for the controller's network connection.
+Default: 255.255.255.0
+Gateway IP Configure the default gateway IP address for the controller.
+Default: 0.0.0.0
+Set Static IP Configure the static IP address for the controller. Default: 0.0.0.0
+Port Set the communication port used to connect to the server.
+Default: 502
+Save Save the settings on this page.
+5-4-6 Update
+Controller Update Description
+Controller Version Displays the current version of the controller.
+(* New feature: whitelist version can be updated, e.g., auto_remove_VU.001)
+Source Import updated version by selecting the source: FTP / USB1 / USB2
+File Select a .zip file for update (e.g., NTCS7_ALL_V0089.zip)
+Update Start executing the update.
+Screwdriver Firmware
+Update Description
+Tools Version Displays the current firmware version of the screwdriver.
+Source Import the update by selecting the source: FTP / USB1 / USB2
+File Select a .bin file for the update. Example: NTMD_20250528_V1p27_N_P.bin
+Start Begin executing the firmware updat
+Power Board Firmware
+Update Description
+CPB Version Displays the current firmware version of the power board.
+Source Select the update source: FTP / USB1 / USB2
+File Select a .bin file for the update.
+Example: PowerBoard_20250528_V1p10.bin 。
+Start Begin executing the power board firmware update 。
+
+
+--- PAGE 24 ---
+23
+5-5. Information
+5-5-1. TOOl
+5-5-2. Controller
+Controller Information Description
+Serial No Display the controller's serial number.
+Controller Version Display the controller's version.
+CPB Version Display the firmware version of the power board.
+Database Version Display the current database version.
+Image Version Display the current image version.
+IP Display the current IP address of the controller.
+Mask Set the subnet mask for the controller's network connection.
+Gateway Set the default gateway IP for the controller's network connection.
+(MAC) Address Display the controller's MAC address.
+Tool Information Description
+Model No Display the tool model.
+Serial No Display the tool's serial number.
+Cumulatlve Count Display the number of maintenance operations. (When the count reaches 1,000,000,
+the homepage will show an EOC alert.)
+Total Count Display the total number of fastenings performed by the tool.
+Rotation Speed(RPM) Display the tool's minimum and maximum rotation speed values.
+Torque Display the tool's minimum and maximum torque values.
+Version Display the tool's software version.
+
+
+--- PAGE 25 ---
+24
+5-5-3. Manual
+Manual Information Description
+QR Code Display a QR code that provides the download link for the user
+manual.
+
+
+--- PAGE 26 ---
+25
+5-6.Chart
+Curve Chart
+Settings Description
+Chart
+Select Display Chart
+Torque vs Time : Horizontal Time,Vertical Torque.
+Angle vs Time : Horizontal Time,Vertical Angle.
+Rotation Speed vs Time : Horizontal Time,Vertical Rotation Speed.
+Torque vs Angle : Horizontal Angle,Vertical Torque.
+Torque & Rotation Speed : Horizontal Time,Left Vertical Torque,Right Vertical
+Rotation Speed.
+Torque Unit Kgf.cm / N.m / lbf.in / kgf.m / N.cm 。
+Sampling Rate Select Outpu Sampling Rate0.5 ( ms ) / 1 ( ms ) / 2 ( ms )。
+HQ/LQ
+Off: Do not display upper and lower limit guide lines.
+On: Display upper and lower limit guide lines.
+Default: Off.
+Apply Apply angle settings.
+Angle
+Select Display Mode: Step Angle / Total Angle
+Step Angle: The angle of the last step.
+Total Angle: The total accumulated angle calculated from the start of the tool operation.
+Default: Step Angle
+Curve Chart Displays the position of the fastening curve chart.
+Job ID Displays the executing Job ID.
+Seq ID Displays the executing Process ID.
+Step ID Displays the executing Step ID.
+Status Displays the fastening status.
+
+
+--- PAGE 27 ---
+26
+6. External output control function description
+Connector No Self-
+definition Description Ordinary load Inductive load
+CN 1 Vdc The voltage output of controller is DC+12V/100mA or +24V/50mA.
+Default: +24V/50mA (+12V/100mA is also applicable)
+CN 2 GND Power output GND
+CN 3 Example:
+OK
+OK: CN3 and CN4 are connected when a screwdriver is
+initiated.
+CN3 + CN4 are connected when short-circuited
+CN3 + CN4 are disconnected when open-circuited1+CN4
+CN 4 COM
+Output state
+definition
+OK
+NG
+NG-High: Exceed upper limit.
+NG-Low: Lower than lower limit.
+OK-Sequence: Sequence completion signal
+OK-JOB: Job completion signal
+Tool Running: Motor signal
+Tool Trigger: Initiating
+signalReverse Reverse
+BS: Barcode Stop
+Barcode
+UserDefine1: Self-definition 1
+UserDefine2: Self-definition 2
+UserDefine3: Self-definition 3
+UserDefine4: Self-definition 4
+UserDefine5: Self-definition 5
+7. External input control function description
+Connector No Self-
+definition Description
+CN 3
+Example:
+START IN
+1. When CN3 + CN4 is (CLOSE), screwdriver is initiated.
+2. When CN3+CN4 is (OPEN), screwdriver stops running
+CN 4 GND
+Input state
+definition
+Disable: Not used
+Enable: Able to use
+Clear: Clear the counts
+Confirm: Make confirmation
+Start IN: Start
+Reverse: Screw removing
+Sequence Clear: Clear sequence
+Reboot: Restart
+Gate Once: Trigger-once sensing
+UserDefine1: Self-definition 1
+UserDefine2: Self-definition 2
+UserDefine3: Self-definition 3
+UserDefine4: Self-definition 4
+UserDefine5: Self-definition 5
+FreeRotate
+Skip the operation step
+Remark:
+※ For the INPUT contact, if the non-isolated (wet contact) control method is used, a 10K resistor shall be connected in series on   
+the wiring to prevent equipment damage.
+※ CN1(V+) and CN2(GND) can supply DC+24V (default). (DC +12V needs to be customized) 
+※ If user needs other DC voltage, users must use step-down circuit to step down voltage. 
+※ If user needs input voltage to drive the police instrument, the input voltage should not exceed DV+/-40V, +/-1A, max:10w   
+(use MOS RELAY I/O version))
+
+
+--- PAGE 28 ---
+27
+8. Description of display status code
+8.1 Abnormal messages from controller/screwdriver/lock information
+Code Error message Description
+1 NO-ERR NO Error
+2 ERR-MOT-TEMP Temperature Error
+3 ERR-HALL Stall Protection
+4 ERR-MOT-CURR Overcurrent Protection
+5 ERR-TMD-FRAM TMD Communication Error
+6 ERR-ENCODER Sensor Error
+7 ERR-DMS-COMM Wrong Tool Connected
+8 ERR-PROC-MAXTIME Timeout Failure
+9 Interrupt Alarm Interruption Alarm
+10 ERR-HIGH-ANGLE Step Angle Upper Limit Error
+11 ERR-LOW-ANGLE Step Angle Lower Limit Error
+12 ERR-HIGH-TORQUE Torque Upper Limit Error
+13 ERR-LOW-TORQUE Torque Lower Limit Error
+
+--- PAGE 29 ---
+28
+9. Modbus Instruction
+Communication method uses MODBUS TCP/ MODBUS RTU standard protocol.
+Connection methods are:
+ TCP connection and setup:
+1. Selecting LAN-DHCP or LAN-STATIC from controller.
+2. Configuring the controller's IP to be on the same domain as the PC's. (Find out an IP from
+LAN-DHCP or select/ setup an IP address from STSTIC IP or GATEWAY IP.)
+3. Setting the Server port (default is 502) and click SAVE.
+ RS-485 connection and setup
+BAUDRATE configuration: 115200/ Data bits: 8/ Stop bits: 1/ Parity: None/ Flow Control: Xon/ Xoff.
+MODBUS PDU：
+ Using Big-Endian as data placement format
+ Read Funcode code supports Read Holding Registers
+ Write Funcode code supports Write signal Register/ Write Multiple Registers
+(If writing multiple addresses in ASCII, only Write Multiple Registers is supported.)
+Note 1: To use command control for the screwdriver, set the screwdriver to Remote Start (Go to Settings >
+Tools > Tool Settings > Start Settings > Remote Start).
+Note 2: When using command control to start the screwdriver (ON), remember to turn off the start (OFF)
+when other operations are required.
+Supported Versions: Controller Version V066 and above.
+For the Modbus communication document (Read/Set Fields), please contact the original manufacturer.
+Modbus Data Transmission
+Controller
+(Slave)
+Read/ Write Commands into fields
+Read Holding
+Register
+ : 0x03,
+Write Single Register
+ : 0x06
+Write Multiple Registers : 0x10
+External device
+PC/PLC
+(Master)
+Reply command into ﬁelds
+
+--- PAGE 30 ---
+29
+Chart 1 Controller Data fields
+TCP/RTU Torque Reading as below:
+Request
+Device ID Functio
+n Code
+Start
+addres
+s
+High
+Start
+addres
+s
+Low
+No of
+addres
+s
+High
+No of
+addres
+s
+Low
+CRC16
+Low
+CRC16
+High
+01 03 10 3B 00 02 B1 06
+Response
+Device ID Function
+Code
+No of
+byte
+Data #1
+High
+Data #1
+Low
+... x n data CRC16
+Low
+CRC16
+High
+01 03 04 00 00 00 33 BA 26
+add (Hex) add (DEC) Length Parameter INS Parameter area Function Code
+103B 4155 2 Tightening
+Torque* 100
+0~TOOL MAX 0x03
+Char2. Controller function setting address
+TCP/RTU An example of setting the screwdriver to start is as follows:
+Request
+Device ID Function
+Code
+Address
+High
+Address
+Low
+Date High Data Low CRC16
+Low
+CRC16
+High
+01 06 01 C8 00 01 C8 08
+Response
+Device ID Function
+Code
+Address
+High
+Address
+Low
+Date High Data Low CRC16
+Low
+CRC16
+High
+01 06 01 C8 00 01 C8 08
+add (Hex) add (DEC) Length Parameter INS Parameter area Function Code
+01C8 456 1 Screwdriver
+Starting
+0: off
+Our company reserves the right to modify the
+product without prior notice.
+

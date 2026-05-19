@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 
 import serial
+from serial.tools import list_ports
 
 
 class ScannerTcpHandler(socketserver.BaseRequestHandler):
@@ -54,6 +55,9 @@ class ScannerTcpServer(socketserver.ThreadingTCPServer):
 class SerialScanner:
     """Read barcode data from a serial COM port (USB virtual COM)."""
 
+    TRIGGER_START = bytes.fromhex("16 54 0D")
+    TRIGGER_STOP = bytes.fromhex("16 55 0D")
+
     def __init__(
         self,
         com_port: str,
@@ -66,6 +70,10 @@ class SerialScanner:
         self._ser: serial.Serial | None = None
         self._thread: threading.Thread | None = None
         self.should_stop = False
+        self._retry_delay_s = 2.0
+        self._retry_delay_max_s = 15.0
+        self._last_connect_error = ""
+        self._write_lock = threading.Lock()
 
     def connect(self) -> bool:
         try:
@@ -86,16 +94,61 @@ class SerialScanner:
             self._ser.dtr = True
             # Discard any stale bytes in buffer
             self._ser.reset_input_buffer()
+            self._retry_delay_s = 2.0
+            self._last_connect_error = ""
             print(f"[Scanner] Serial connected: {self.com_port} @ {self.baudrate}")
             return True
         except Exception as exc:
-            print(f"[Scanner] Serial open failed ({self.com_port}): {exc}")
+            message = f"[Scanner] Serial open failed ({self.com_port}), retry in {self._retry_delay_s:.0f}s: {exc}"
+            if message != self._last_connect_error:
+                print(message)
+                self._last_connect_error = message
             self._ser = None
             return False
 
     @property
     def connected(self) -> bool:
         return self._ser is not None and self._ser.is_open
+
+    def status_dict(self) -> dict[str, object]:
+        return {
+            "mode": "serial",
+            "connected": self.connected,
+            "com_port": self.com_port,
+            "baudrate": self.baudrate,
+            "last_error": self._last_connect_error,
+        }
+
+    def _ensure_connected(self) -> None:
+        if self.connected:
+            return
+        if not self.connect():
+            raise RuntimeError(f"Scanner not connected on {self.com_port}")
+
+    def send_trigger(self, command: bytes) -> dict[str, object]:
+        self._ensure_connected()
+        assert self._ser is not None
+        with self._write_lock:
+            self._ser.write(command)
+            self._ser.flush()
+        print(f"[Scanner] TX {command.hex(' ')} -> {self.com_port}", flush=True)
+        return {
+            "ok": True,
+            "connected": self.connected,
+            "com_port": self.com_port,
+            "baudrate": self.baudrate,
+            "command_hex": command.hex(" ").upper(),
+        }
+
+    def trigger_start(self) -> dict[str, object]:
+        return self.send_trigger(self.TRIGGER_START)
+
+    def trigger_stop(self) -> dict[str, object]:
+        return self.send_trigger(self.TRIGGER_STOP)
+
+    @staticmethod
+    def available_ports() -> list[str]:
+        return sorted(port.device for port in list_ports.comports() if port.device)
 
     def _read_loop(self) -> None:
         buffer = b""
@@ -107,8 +160,10 @@ class SerialScanner:
             try:
                 # ---- reconnect ----
                 if self._ser is None or not self._ser.is_open:
-                    time.sleep(1.0)
-                    self.connect()
+                    time.sleep(self._retry_delay_s)
+                    ok = self.connect()
+                    if not ok:
+                        self._retry_delay_s = min(self._retry_delay_s * 2.0, self._retry_delay_max_s)
                     buffer = b""
                     last_heartbeat = 0.0
                     continue
@@ -218,4 +273,3 @@ class SerialScanner:
             except Exception:
                 pass
             self._ser = None
-

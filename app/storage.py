@@ -274,11 +274,11 @@ class ProductionStorage:
                 ).fetchone()
         return row is not None
 
-    def bind_qr(self, record_id: int, qr_code: str) -> dict[str, Any]:
+    def bind_qr(self, record_id: int, qr_code: str, reject_duplicate: bool = True) -> dict[str, Any]:
         record = self.get_record(record_id)
         if record is None:
             raise ValueError("当前生产记录不存在")
-        if self.qr_exists(qr_code, exclude_record_id=record_id):
+        if reject_duplicate and self.qr_exists(qr_code, exclude_record_id=record_id):
             self.update_record(record_id, qr_bind_status="DUPLICATE", alarm_code="QR_DUP", alarm_message="二维码重复")
             raise ValueError("二维码重复，已绑定到其他记录")
         updated = self.update_record(
@@ -287,6 +287,8 @@ class ProductionStorage:
             qr_bind_status="BOUND",
             status="COMPLETED",
             scanned_at=now_text(),
+            alarm_code="",
+            alarm_message="",
         )
         self.add_event(record_id, "qr.bound", f"二维码绑定完成：{qr_code}")
         return updated

@@ -59,7 +59,7 @@ class Snap7Client:
         self._timeout = timeout
         self._reconnect_interval = reconnect_interval
         self._client: Any = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._connected = False
 
     # ------------------------------------------------------------------
@@ -142,12 +142,14 @@ class Snap7Client:
 
     def read_m_byte(self, byte_offset: int) -> int:
         """Read a single M byte (M{byte_offset}.0 - M{byte_offset}.7)."""
-        data = self._client.mb_read(byte_offset, 1)
-        return data[0]
+        with self._lock:
+            data = self._client.mb_read(byte_offset, 1)
+            return data[0]
 
     def read_m_bits(self, start_byte: int = M_READ_START, size: int = M_READ_SIZE) -> bytearray:
         """Bulk-read M area bytes. Returns bytearray of length *size*."""
-        return bytearray(self._client.mb_read(start_byte, size))
+        with self._lock:
+            return bytearray(self._client.mb_read(start_byte, size))
 
     def read_m_bit(self, byte_offset: int, bit_index: int) -> bool:
         """Read a single M bit (e.g. M10.2 → byte_offset=10, bit_index=2)."""
@@ -156,13 +158,14 @@ class Snap7Client:
 
     def write_m_bit(self, byte_offset: int, bit_index: int, value: bool) -> None:
         """Write a single M bit using read-modify-write."""
-        current = self.read_m_byte(byte_offset)
-        if value:
-            new_val = current | (1 << bit_index)
-        else:
-            new_val = current & ~(1 << bit_index)
-        if new_val != current:
-            self._client.mb_write(byte_offset, bytes([new_val]))
+        with self._lock:
+            current = self.read_m_byte(byte_offset)
+            if value:
+                new_val = current | (1 << bit_index)
+            else:
+                new_val = current & ~(1 << bit_index)
+            if new_val != current:
+                self._client.mb_write(byte_offset, 1, bytearray([new_val]))
 
     def read_all_m_inputs(self) -> dict[str, bool]:
         """Read all M_BITS_IN signals in one bulk read. Returns {label: value}."""
@@ -174,21 +177,22 @@ class Snap7Client:
 
     def write_all_m_outputs(self, signals: dict[str, bool]) -> None:
         """Write M_BITS_OUT signals. *signals* maps label→value."""
-        # Group by byte to minimize writes
-        byte_changes: dict[int, int] = {}
-        for _, (bo, bi, label) in M_BITS_OUT.items():
-            val = signals.get(label)
-            if val is None:
-                continue
-            if bo not in byte_changes:
-                byte_changes[bo] = self.read_m_byte(bo)
-            if val:
-                byte_changes[bo] |= (1 << bi)
-            else:
-                byte_changes[bo] &= ~(1 << bi)
+        with self._lock:
+            # Group by byte to minimize writes and keep read-modify-write atomic.
+            byte_changes: dict[int, int] = {}
+            for _, (bo, bi, label) in M_BITS_OUT.items():
+                val = signals.get(label)
+                if val is None:
+                    continue
+                if bo not in byte_changes:
+                    byte_changes[bo] = self.read_m_byte(bo)
+                if val:
+                    byte_changes[bo] |= (1 << bi)
+                else:
+                    byte_changes[bo] &= ~(1 << bi)
 
-        for bo, new_val in byte_changes.items():
-            self._client.mb_write(bo, bytes([new_val]))
+            for bo, new_val in byte_changes.items():
+                self._client.mb_write(bo, 1, bytearray([new_val]))
 
     # ------------------------------------------------------------------
     # V-area read / write (S7-200 SMART: V == DB1)
@@ -198,11 +202,13 @@ class Snap7Client:
 
     def read_v_bytes(self, start: int, size: int) -> bytearray:
         """Read *size* bytes from V area starting at *start*."""
-        return bytearray(self._client.db_read(self.V_AREA_DB, start, size))
+        with self._lock:
+            return bytearray(self._client.db_read(self.V_AREA_DB, start, size))
 
     def write_v_bytes(self, start: int, data: bytes) -> None:
         """Write bytes to V area starting at *start*."""
-        self._client.db_write(self.V_AREA_DB, start, data)
+        with self._lock:
+            self._client.db_write(self.V_AREA_DB, start, data)
 
     def read_v_word(self, start: int) -> int:
         """Read a 16-bit word from VW{start} (big-endian, unsigned)."""
