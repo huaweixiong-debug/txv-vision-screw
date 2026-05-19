@@ -1560,7 +1560,9 @@ function renderRecent(records, stats) {
         <td style="white-space:nowrap;font-size:0.65rem;">${fmtTime(row.created_at)}</td>
         <td>${escapeHtml(row.internal_serial || "")}</td>
         <td>${escapeHtml(row.qr_code || "")}</td>
+        <td>${escapeHtml(row.operator || row.operator_name || "")}</td>
         <td>${escapeHtml(row.product_model || "")}</td>
+        <td>${renderImageLink(row.image_path)}</td>
         <td>${asFixed(row.bolt1_torque)}</td>
         <td>${asFixed(row.bolt1_angle)}</td>
         <td>${asFixed(row.bolt2_torque)}</td>
