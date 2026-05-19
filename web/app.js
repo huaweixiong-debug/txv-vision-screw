@@ -1,35 +1,42 @@
-const $ = (selector) => document.querySelector(selector);
+﻿const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
 let settings = null;
 let statusSnapshot = null;
 let lastQr = "";
+let lastScanAlertKey = "";
 let scannerScans = [];
 let scannerConfig = { com_port: "COM3", baudrate: 115200 };
 let datasetsTransform = { zoom: 1.0, rotate: 0, panX: 0, panY: 0 };
+let datasetsTransformBase = { width: 0, height: 0 };
 const ZOOM_STEP = 0.1;
-const ZOOM_MIN = 0.2;
+const ZOOM_MIN = 1.0;
 const ZOOM_MAX = 4.0;
 const PAN_STEP = 20;
 const EXPOSURE_DEFAULT = 10000;
 const MAX_PRODUCTS = Number.POSITIVE_INFINITY;
 const MAX_PERSONNEL = Number.POSITIVE_INFINITY;
 const DEFAULT_QR_RULE = "^[A-Za-z0-9_.-]{6,80}$";
-const LAYOUT_STORAGE_KEY = "hmi_production_layout_v5";
+const LAYOUT_STORAGE_KEY = "hmi_production_layout_v6";
 const PRODUCT_GRID_WIDTHS_KEY = "hmi_product_grid_widths_v1";
 const CARD_MIN_WIDTH = 200;
 const CARD_MIN_HEIGHT = 120;
 const CARD_GAP = 8;
 const PRODUCT_GRID_DEFAULTS = { model: 100, rule: 100 };
+const CAMERA_FEED_INTERVAL_MS = 250;
+const STATUS_POLL_INTERVAL_MS = 500;
+const CAMERA_POLL_LEASE_KEY = "hmi_camera_poll_lease_v1";
+const CAMERA_POLL_LEASE_MS = CAMERA_FEED_INTERVAL_MS * 3;
+const CAMERA_POLL_TAB_ID = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let productGridResizeState = null;
 
 const DEFAULT_LAYOUT = {
-  "operator-panel":    { x: 0.00, y: 0.00, w: 0.21, h: 0.10 },
-  "plc-panel":         { x: 0.00, y: 0.11, w: 0.21, h: 0.42 },
-  "scan-panel":        { x: 0.00, y: 0.54, w: 0.21, h: 0.22 },
-  "camera-panel":      { x: 0.22, y: 0.00, w: 0.44, h: 0.60 },
-  "tightening-panel":  { x: 0.22, y: 0.61, w: 0.44, h: 0.18 },
-  "recent-panel":      { x: 0.67, y: 0.00, w: 0.33, h: 0.79 },
+  "operator-panel":    { x: 0.00, y: 0.00, w: 0.18, h: 0.12 },
+  "plc-panel":         { x: 0.00, y: 0.13, w: 0.18, h: 0.57 },
+  "camera-panel":      { x: 0.19, y: 0.00, w: 0.57, h: 0.70 },
+  "tightening-panel":  { x: 0.77, y: 0.00, w: 0.23, h: 0.26 },
+  "scan-panel":        { x: 0.77, y: 0.27, w: 0.23, h: 0.43 },
+  "recent-panel":      { x: 0.00, y: 0.71, w: 1.00, h: 0.29 },
 };
 
 function clampProductGridWidth(column, value) {
@@ -392,7 +399,7 @@ async function api(path, body = null) {
   const response = await fetch(path, options);
   const payload = await response.json();
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || `请求失败：${path}`);
+    throw new Error(payload.error || `璇锋眰澶辫触锛?{path}`);
   }
   return payload;
 }
@@ -430,9 +437,9 @@ function updateScannerBadge() {
   const port = scannerConfig.com_port || "COM3";
   const baud = scannerConfig.baudrate || 115200;
   if (lastQr) {
-    setBadge("#scannerBadge", `扫码枪 ${port} ✓`, true);
+    setBadge("#scannerBadge", `\u626b\u7801\u67aa ${port} \u2713`, true);
   } else {
-    setBadge("#scannerBadge", `扫码枪 ${port}`, "warn");
+    setBadge("#scannerBadge", `\u626b\u7801\u67aa ${port}`, "warn");
   }
   // Also update the live bar status
   const liveBar = $("#scannerLiveBar");
@@ -467,6 +474,23 @@ function onScannerScan(code) {
   updateScannerBadge();
 }
 
+async function submitQrBinding(code, okMessage = "\u4e8c\u7ef4\u7801\u7ed1\u5b9a\u5b8c\u6210") {
+  const payload = await api("/api/scan", { qr_code: code });
+  await loadStatus();
+  const alarm = payload?.alarm || {};
+  const qrStatus = payload?.current_record?.qr_bind_status || "";
+  if (alarm.code === "QR_DUP" || qrStatus === "DUPLICATE") {
+    toast(alarm.message || "\u4e8c\u7ef4\u7801\u91cd\u590d\uff0c\u8bf7\u7ee7\u7eed\u626b\u7801");
+    return payload;
+  }
+  if (alarm.code === "QR_RULE_NG" || qrStatus === "RULE_NG") {
+    toast(alarm.message || "\u4e8c\u7ef4\u7801\u4e0d\u7b26\u5408\u5f53\u524d\u89c4\u5219");
+    return payload;
+  }
+  toast(okMessage);
+  return payload;
+}
+
 function renderScannerHistory() {
   const historyDiv = $("#scannerHistory");
   const itemsDiv = $("#scannerHistoryItems");
@@ -489,11 +513,41 @@ function renderScannerHistory() {
 
 const CAMERA_SETTINGS_KEY = "datasets_camera_settings_v1";
 
+function normalizeCameraTransformState(rawTransform) {
+  const next = {
+    zoom: Number(rawTransform?.zoom ?? 1.0),
+    rotate: Number(rawTransform?.rotate ?? 0),
+    panX: Number(rawTransform?.panX ?? 0),
+    panY: Number(rawTransform?.panY ?? 0),
+  };
+  const hasFiniteValues = [next.zoom, next.rotate, next.panX, next.panY].every(Number.isFinite);
+  if (!hasFiniteValues || next.zoom < 1.0 || next.zoom > ZOOM_MAX) {
+    return { zoom: 1.0, rotate: 0, panX: 0, panY: 0 };
+  }
+  return {
+    zoom: Math.max(1.0, Math.min(ZOOM_MAX, next.zoom)),
+    rotate: next.rotate,
+    panX: next.zoom <= 1.0 ? 0 : next.panX,
+    panY: next.zoom <= 1.0 ? 0 : next.panY,
+  };
+}
+
 function loadSavedCameraSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(CAMERA_SETTINGS_KEY) || "{}");
     if (saved.transform) {
-      datasetsTransform = saved.transform;
+      const normalized = normalizeCameraTransformState(saved.transform);
+      datasetsTransform = normalized;
+      if (JSON.stringify(normalized) !== JSON.stringify(saved.transform)) {
+        saved.transform = normalized;
+        localStorage.setItem(CAMERA_SETTINGS_KEY, JSON.stringify(saved));
+      }
+    }
+    if (saved.transformBase && Number(saved.transformBase.width) > 0 && Number(saved.transformBase.height) > 0) {
+      datasetsTransformBase = {
+        width: Number(saved.transformBase.width),
+        height: Number(saved.transformBase.height),
+      };
     }
     return saved;
   } catch (e) {
@@ -501,9 +555,34 @@ function loadSavedCameraSettings() {
   }
 }
 
+function refreshTransformBaseFromDatasets() {
+  const dsImg = document.getElementById("datasetsCameraFeed");
+  if (!dsImg) return;
+  const width = Number(dsImg.clientWidth || 0);
+  const height = Number(dsImg.clientHeight || 0);
+  if (width > 0 && height > 0) {
+    datasetsTransformBase = { width, height };
+    try {
+      const raw = localStorage.getItem(CAMERA_SETTINGS_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      const savedWidth = Number(saved.transformBase?.width || 0);
+      const savedHeight = Number(saved.transformBase?.height || 0);
+      if (savedWidth === width && savedHeight === height) return;
+      saved.transform = { ...datasetsTransform };
+      saved.transformBase = { ...datasetsTransformBase };
+      localStorage.setItem(CAMERA_SETTINGS_KEY, JSON.stringify(saved));
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
 function saveCameraSettings() {
+  refreshTransformBaseFromDatasets();
   const settings = {
     transform: { ...datasetsTransform },
+    transformBase: { ...datasetsTransformBase },
     exposure_us: Number(document.getElementById("exposureSlider")?.value || EXPOSURE_DEFAULT),
     saved_at: new Date().toISOString(),
   };
@@ -514,27 +593,86 @@ function saveCameraSettings() {
   }
 }
 
+function clampCameraTransformForElement(element, transform) {
+  if (!element) return { ...transform };
+  const width = Number(element.clientWidth || 0);
+  const height = Number(element.clientHeight || 0);
+  const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Number(transform.zoom || 1.0)));
+  const rotate = Number(transform.rotate || 0);
+  if (width <= 0 || height <= 0) {
+    return {
+      zoom,
+      rotate,
+      panX: Number(transform.panX || 0),
+      panY: Number(transform.panY || 0),
+    };
+  }
+
+  const overflowX = Math.max(0, ((zoom - 1) * width) / 2);
+  const overflowY = Math.max(0, ((zoom - 1) * height) / 2);
+  const slackX = zoom <= 1.0 ? 0 : Math.max(36, width * 0.12);
+  const slackY = zoom <= 1.0 ? 0 : Math.max(28, height * 0.12);
+  const maxPanX = overflowX + slackX;
+  const maxPanY = overflowY + slackY;
+
+  return {
+    zoom,
+    rotate,
+    panX: Math.max(-maxPanX, Math.min(maxPanX, Number(transform.panX || 0))),
+    panY: Math.max(-maxPanY, Math.min(maxPanY, Number(transform.panY || 0))),
+  };
+}
+
 function applyDatasetsTransform() {
-  const { zoom, rotate, panX, panY } = datasetsTransform;
-  const transformStr = `translate(${panX}px, ${panY}px) rotate(${rotate}deg) scale(${zoom})`;
+  const normalized = clampCameraTransformForElement(
+    document.getElementById("datasetsCameraFeed") || document.getElementById("cameraFeed"),
+    datasetsTransform,
+  );
+  datasetsTransform = normalized;
+  const { zoom, rotate, panX, panY } = normalized;
   // Apply to datasets camera feed
   const dsImg = document.getElementById("datasetsCameraFeed");
   if (dsImg) {
-    dsImg.style.transform = transformStr;
+    const dsTransform = clampCameraTransformForElement(dsImg, normalized);
+    dsImg.style.transform = `translate(${dsTransform.panX}px, ${dsTransform.panY}px) rotate(${rotate}deg) scale(${zoom})`;
+    refreshTransformBaseFromDatasets();
   }
   // Apply to production camera feed
   const prodImg = document.getElementById("cameraFeed");
   if (prodImg) {
-    prodImg.style.transform = transformStr;
+    const baseWidth = Number(datasetsTransformBase.width || 0);
+    const baseHeight = Number(datasetsTransformBase.height || 0);
+    const widthRatio = baseWidth > 0 ? Number(prodImg.clientWidth || 0) / baseWidth : 1;
+    const heightRatio = baseHeight > 0 ? Number(prodImg.clientHeight || 0) / baseHeight : 1;
+    const syncedPanX = panX * (widthRatio > 0 ? widthRatio : 1);
+    const syncedPanY = panY * (heightRatio > 0 ? heightRatio : 1);
+    const prodTransform = clampCameraTransformForElement(prodImg, {
+      zoom,
+      rotate,
+      panX: syncedPanX,
+      panY: syncedPanY,
+    });
+    prodImg.style.transform = `translate(${prodTransform.panX}px, ${prodTransform.panY}px) rotate(${rotate}deg) scale(${zoom})`;
     prodImg.style.transformOrigin = "center center";
     prodImg.style.transition = "transform 0.12s ease";
   }
+  const parts = [];
+  if (zoom !== 1.0) parts.push(`${zoom.toFixed(1)}x`);
+  if (rotate !== 0) parts.push(`${rotate}掳`);
+  if (panX !== 0 || panY !== 0) parts.push(`(${panX},${panY})px`);
+  const badgeText = parts.join(" ");
+  for (const badge of [document.getElementById("transformBadge"), document.getElementById("productionTransformBadge")]) {
+    if (!badge) continue;
+    badge.textContent = badgeText;
+    badge.style.display = badgeText ? "" : "none";
+  }
+  return;
   // Update badge
   const badge = document.getElementById("transformBadge");
   if (badge) {
     const parts = [];
     if (zoom !== 1.0) parts.push(`${zoom.toFixed(1)}x`);
-    if (rotate !== 0) parts.push(`${rotate}°`);
+    if (rotate !== 0) parts.push(`${rotate}掳`);
     if (panX !== 0 || panY !== 0) parts.push(`(${panX},${panY})px`);
     badge.textContent = parts.length > 0 ? parts.join(" ") : "";
     badge.style.display = parts.length > 0 ? "" : "none";
@@ -559,13 +697,131 @@ function startDatasetsFeed() {
   window.__datasetsFeedTimer = feedTimer;
 }
 
+function readCameraPollLease() {
+  try {
+    const raw = localStorage.getItem(CAMERA_POLL_LEASE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeCameraPollLease(expiresAt) {
+  try {
+    localStorage.setItem(
+      CAMERA_POLL_LEASE_KEY,
+      JSON.stringify({ tabId: CAMERA_POLL_TAB_ID, expiresAt }),
+    );
+  } catch (_) {
+    // Ignore storage failures; polling still works in a single tab.
+  }
+}
+
+function releaseCameraPollLease() {
+  try {
+    const lease = readCameraPollLease();
+    if (lease?.tabId === CAMERA_POLL_TAB_ID) {
+      localStorage.removeItem(CAMERA_POLL_LEASE_KEY);
+    }
+  } catch (_) {
+    // Ignore storage failures.
+  }
+}
+
+function tryClaimCameraPollLease() {
+  if (document.hidden) {
+    releaseCameraPollLease();
+    return false;
+  }
+  const now = Date.now();
+  const lease = readCameraPollLease();
+  if (!lease || lease.tabId === CAMERA_POLL_TAB_ID || Number(lease.expiresAt || 0) <= now) {
+    writeCameraPollLease(now + CAMERA_POLL_LEASE_MS);
+  }
+  return readCameraPollLease()?.tabId === CAMERA_POLL_TAB_ID;
+}
+
+function getActiveMainTab() {
+  return document.querySelector(".tab-btn.active")?.dataset.tab || "production";
+}
+
+function refreshCameraFeeds(force = false) {
+  if (!force && document.hidden) return;
+  const activeTab = getActiveMainTab();
+  const frameUrl = "/api/vision/latest-frame?t=" + Date.now();
+
+  if (activeTab === "datasets") {
+    const img = document.getElementById("datasetsCameraFeed");
+    if (!img) return;
+    img.onerror = () => {
+      const badge = document.getElementById("captureCameraBadge");
+      if (badge) {
+        badge.textContent = "相机未连接";
+        badge.className = "badge bad";
+      }
+    };
+    img.onload = () => {
+      const badge = document.getElementById("captureCameraBadge");
+      if (badge) {
+        badge.textContent = "实时画面";
+        badge.className = "badge good";
+      }
+      applyDatasetsTransform();
+    };
+    img.src = frameUrl;
+    return;
+  }
+
+  const img = document.getElementById("cameraFeed");
+  if (!img) return;
+  img.onerror = () => {
+    const status = document.getElementById("cameraStatus");
+    if (status) status.textContent = "相机未连接";
+  };
+  img.onload = () => {
+    const status = document.getElementById("cameraStatus");
+    if (status) status.textContent = "实时画面";
+    applyDatasetsTransform();
+  };
+  img.src = frameUrl;
+}
+
+function startCameraFeedPolling() {
+  if (window.__cameraFeedTimer) clearInterval(window.__cameraFeedTimer);
+  if (tryClaimCameraPollLease()) {
+    refreshCameraFeeds(true);
+  }
+  window.__cameraFeedTimer = setInterval(() => {
+    if (tryClaimCameraPollLease()) {
+      refreshCameraFeeds(false);
+    }
+  }, CAMERA_FEED_INTERVAL_MS);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && tryClaimCameraPollLease()) {
+    refreshCameraFeeds(true);
+    return;
+  }
+  releaseCameraPollLease();
+});
+
+window.addEventListener("storage", (event) => {
+  if (event.key === CAMERA_POLL_LEASE_KEY && tryClaimCameraPollLease()) {
+    refreshCameraFeeds(true);
+  }
+});
+
 async function autoConnectAndRestore() {
   // Try to connect camera
   try {
     const payload = await api("/api/camera/connect", {});
-    if (payload.connected) {
+    if (payload.connected && !payload.is_mock) {
       const badge = document.getElementById("captureCameraBadge");
       if (badge) { badge.textContent = "实时画面"; badge.className = "badge good"; }
+    } else if (payload.is_mock) {
+      const badge = document.getElementById("captureCameraBadge");
+      if (badge) { badge.textContent = "相机未连接"; badge.className = "badge bad"; }
     }
   } catch (e) {
     // Camera might already be connected, feed will show status
@@ -605,7 +861,7 @@ async function setCameraExposure(valueUs) {
       // Auto-save to server already done by API
     }
   } catch (e) {
-    toast(`曝光设置失败: ${e.message}`);
+    toast(`鏇濆厜璁剧疆澶辫触: ${e.message}`);
   }
 }
 
@@ -618,7 +874,7 @@ async function autoLoginAndStart() {
   try {
     await api("/api/login", {
       operator: document.getElementById("operatorInput")?.value || "OP001",
-      shift: "白班",
+      shift: "鐧界彮",
     });
   } catch (e) { /* ignore */ }
 
@@ -634,10 +890,14 @@ async function autoLoginAndStart() {
 
 async function loadSettings() {
   settings = await api("/api/settings");
+  if (window.__selectedProduct && !getProductConfigByModel(window.__selectedProduct)) {
+    window.__selectedProduct = "";
+  }
   scannerConfig = settings.scanner || scannerConfig;
   updateScannerBadge();
   renderSettings();
   renderProductOptions();
+  renderProductSummary(statusSnapshot);
 }
 
 async function loadStatus() {
@@ -651,21 +911,52 @@ async function loadStatus() {
     lastQr = qr;
     onScannerScan(qr);
   }
+  const alarm = statusSnapshot.alarm || {};
+  const qrStatus = statusSnapshot.current_record?.qr_bind_status || "";
+  const scanAlertKey = [alarm.code || "", alarm.message || "", statusSnapshot.last_qr || "", qrStatus].join("|");
+  if (
+    scanAlertKey &&
+    scanAlertKey !== lastScanAlertKey &&
+    (alarm.code === "QR_DUP" || alarm.code === "QR_RULE_NG" || qrStatus === "DUPLICATE" || qrStatus === "RULE_NG")
+  ) {
+    lastScanAlertKey = scanAlertKey;
+    toast(alarm.message || (alarm.code === "QR_DUP" ? "\u4e8c\u7ef4\u7801\u91cd\u590d\uff0c\u8bf7\u7ee7\u7eed\u626b\u7801" : "\u4e8c\u7ef4\u7801\u4e0d\u7b26\u5408\u5f53\u524d\u89c4\u5219"));
+  } else if (!alarm.code && qrStatus !== "DUPLICATE" && qrStatus !== "RULE_NG") {
+    lastScanAlertKey = "";
+  }
   updateScannerBadge();
+}
+
+function startStatusPolling() {
+  if (window.__statusPollTimer) clearInterval(window.__statusPollTimer);
+  window.__statusPollTimer = setInterval(() => {
+    if (document.hidden) return;
+    loadStatus().catch(() => setBadge("#connectionBadge", "连接异常", false));
+  }, STATUS_POLL_INTERVAL_MS);
 }
 
 function renderProductOptions() {
   const select = $("#productSelect");
   select.innerHTML = "";
   const products = (settings.products || []).filter((product) => product.enabled !== false);
+  const preferredProduct = window.__selectedProduct || settings.station.active_product_model || "";
   for (const product of products) {
     const option = document.createElement("option");
     option.value = product.product_model;
     option.textContent = product.product_model;
     option.dataset.recipeNo = product.recipe_no;
-    option.selected = product.product_model === settings.station.active_product_model;
+    option.selected = product.product_model === preferredProduct;
     select.appendChild(option);
   }
+  if (products.length === 0) {
+    window.__selectedProduct = "";
+    return;
+  }
+  const activeProduct = products.some((product) => product.product_model === preferredProduct)
+    ? preferredProduct
+    : products[0].product_model;
+  select.value = activeProduct;
+  window.__selectedProduct = activeProduct;
 }
 
 function renderOperatorList() {
@@ -690,7 +981,7 @@ function renderSettings() {
   $("#setCameraIp").value = settings.vision.camera_ip;
   $("#setConfidenceThreshold").value = settings.vision.confidence_threshold ?? 0.6;
   $("#setInferenceEnabled").checked = settings.vision.inference_enabled !== false;
-  $("#setInferenceIntervalMs").value = settings.vision.inference_interval_ms ?? 500;
+  $("#setInferenceIntervalMs").value = settings.vision.inference_interval_ms ?? 300;
   $("#setAutoCaptureEnabled").checked = settings.vision.auto_capture_enabled !== false;
   $("#setPlcIp").value = settings.plc.ip;
   $("#setPlcPort").value = settings.plc.port;
@@ -748,9 +1039,9 @@ function personTemplate(index) {
   return {
     enabled: true,
     employee_id: `OP${String(index + 1).padStart(3, "0")}`,
-    name: "新操作员",
-    role: "操作员",
-    shift: "白班",
+    name: "鏂版搷浣滃憳",
+    role: "\u64cd\u4f5c\u5458",
+    shift: "鐧界彮",
   };
 }
 
@@ -800,7 +1091,7 @@ function renderProductTable() {
   $$("[data-remove-person]").forEach((button) => {
     button.addEventListener("click", () => {
       if ((settings.personnel || []).length <= 1) {
-        toast("至少保留一个人员");
+        toast("\u81f3\u5c11\u4fdd\u7559\u4e00\u4e2a\u4eba\u5458");
         return;
       }
       settings.personnel.splice(Number(button.dataset.removePerson), 1);
@@ -876,8 +1167,8 @@ function collectProductRows() {
     });
     if (product.product_model) products.push(product);
   });
-  if (products.length > MAX_PRODUCTS) throw new Error("产品设置最多 255 行");
-  if (products.length < 1) throw new Error("至少需要 1 个产品型号");
+  if (products.length > MAX_PRODUCTS) throw new Error("\u4ea7\u54c1\u8bbe\u7f6e\u6700\u591a 255 \u884c");
+  if (products.length < 1) throw new Error("\u81f3\u5c11\u9700\u8981 1 \u4e2a\u4ea7\u54c1\u578b\u53f7");
   return products;
 }
 
@@ -891,8 +1182,8 @@ function collectPersonRows() {
     });
     if (person.employee_id) personnel.push(person);
   });
-  if (personnel.length > MAX_PERSONNEL) throw new Error("人员设置最多 255 个");
-  if (personnel.length < 1) throw new Error("至少需要 1 个人员");
+  if (personnel.length > MAX_PERSONNEL) throw new Error("\u4eba\u5458\u8bbe\u7f6e\u6700\u591a 255 \u4e2a");
+  if (personnel.length < 1) throw new Error("\u81f3\u5c11\u9700\u8981 1 \u4e2a\u4eba\u5458");
   return personnel;
 }
 
@@ -909,13 +1200,13 @@ function formatStatusLabel(value) {
     WAIT: "待机",
     OK: "OK",
     NG: "NG",
-    RUNNING: "运行中",
-    WAIT_QR: "待 QR",
+    RUNNING: "\u8fd0\u884c\u4e2d",
+    WAIT_QR: "待扫码",
     COMPLETED: "完成",
-    BOUND: "已绑定",
+    BOUND: "\u5df2\u7ed1\u5b9a",
     RULE_NG: "规则 NG",
     DUPLICATE: "重复",
-    NG_WAIT_REWORK: "待返修",
+    NG_WAIT_REWORK: "\u5f85\u8fd4\u4fee",
   };
   return labels[value] || value || "--";
 }
@@ -937,28 +1228,52 @@ function formatRecentTime(value) {
   return normalized.length >= 16 ? normalized.slice(5, 16) : normalized;
 }
 
+function getProductConfigByModel(productModel) {
+  if (!productModel) return null;
+  return (settings?.products || []).find((product) => product.product_model === productModel) || null;
+}
+
+function getDisplayProductModel(snapshot = statusSnapshot) {
+  const selectedValue = $("#productSelect")?.value || "";
+  return (
+    window.__selectedProduct ||
+    selectedValue ||
+    settings?.station?.active_product_model ||
+    snapshot?.settings_summary?.product_model ||
+    ""
+  );
+}
+
+function renderProductSummary(snapshot = statusSnapshot) {
+  const displayProduct = getDisplayProductModel(snapshot);
+  const prodCfg = getProductConfigByModel(displayProduct);
+  if (prodCfg) {
+    $("#productText").textContent = `${prodCfg.product_model} / ${prodCfg.recipe_no}`;
+    $("#recipeText").textContent = `扭矩 ${prodCfg.torque_min_nm.toFixed(2)}-${prodCfg.torque_max_nm.toFixed(2)} Nm / 角度 ${prodCfg.angle_min_deg.toFixed(0)}-${prodCfg.angle_max_deg.toFixed(0)}°`;
+    return;
+  }
+  if (snapshot?.settings_summary) {
+    $("#productText").textContent = `${snapshot.settings_summary.product_model} / ${snapshot.settings_summary.recipe_no}`;
+    $("#recipeText").textContent = `扭矩 ${snapshot.settings_summary.torque} / 角度 ${snapshot.settings_summary.angle}`;
+    return;
+  }
+  $("#productText").textContent = "--";
+  $("#recipeText").textContent = "扭矩 -- / 角度 --";
+}
+
 function renderStatus(snapshot) {
   $("#stateLabel").textContent = snapshot.state_label;
   $("#operatorBadge").textContent = `${snapshot.operator} / ${snapshot.shift}`;
   const record = snapshot.current_record || {};
   $("#serialText").textContent = record.internal_serial || "--";
-  $("#qrText").textContent = `二维码：${record.qr_code || record.qr_bind_status || "待绑定"}`;
-  var displayProduct = window.__selectedProduct || settings?.station?.active_product_model || snapshot.settings_summary.product_model;
-  // Find product config from local settings for accurate data
-  var prodCfg = (settings.products || []).find(function(p) { return p.product_model === displayProduct; });
-  if (prodCfg) {
-    $("#productText").textContent = `${prodCfg.product_model} / ${prodCfg.recipe_no}`;
-    $("#recipeText").textContent = `扭矩 ${prodCfg.torque_min_nm.toFixed(2)}-${prodCfg.torque_max_nm.toFixed(2)} Nm / 角度 ${prodCfg.angle_min_deg.toFixed(0)}-${prodCfg.angle_max_deg.toFixed(0)}°`;
-  } else {
-    $("#productText").textContent = `${snapshot.settings_summary.product_model} / ${snapshot.settings_summary.recipe_no}`;
-    $("#recipeText").textContent = `扭矩 ${snapshot.settings_summary.torque} / 角度 ${snapshot.settings_summary.angle}`;
-  }
-  $("#alarmText").textContent = snapshot.alarm.message ? `${snapshot.alarm.code}：${snapshot.alarm.message}` : "无报警";
+  $("#qrText").textContent = `\u4e8c\u7ef4\u7801\uff1a${record.qr_code || record.qr_bind_status || "\u5f85\u7ed1\u5b9a"}`;
+  renderProductSummary(snapshot);
+  $("#alarmText").textContent = snapshot.alarm.message ? `${snapshot.alarm.code}: ${snapshot.alarm.message}` : "\u65e0\u62a5\u8b66";
   $("#alarmText").style.color = snapshot.alarm.message ? "#ffd6c9" : "rgba(255,255,255,.76)";
   setBadge("#visionBadge", snapshot.vision.status, snapshot.vision.status);
-  setBadge("#plcReadyBadge", plcReady(snapshot.plc) ? "PLC 就绪" : "PLC 未就绪", plcReady(snapshot.plc));
-  setBadge("#permissionBadge", snapshot.pc_outputs.allow_tightening ? "允许拧紧" : "未许可", !!snapshot.pc_outputs.allow_tightening);
-  setBadge("#scanBadge", snapshot.state === "pending_scan" ? "可扫码" : record.qr_bind_status || "待流程结束", record.qr_bind_status);
+  setBadge("#plcReadyBadge", plcReady(snapshot.plc) ? "PLC \u5c31\u7eea" : "PLC \u672a\u5c31\u7eea", plcReady(snapshot.plc));
+  setBadge("#permissionBadge", snapshot.pc_outputs.allow_tightening ? "\u5141\u8bb8\u62e7\u7d27" : "\u672a\u8bb8\u53ef", !!snapshot.pc_outputs.allow_tightening);
+  setBadge("#scanBadge", snapshot.state === "pending_scan" ? "\u53ef\u626b\u7801" : record.qr_bind_status || "\u5f85\u6d41\u7a0b\u7ed3\u675f", record.qr_bind_status);
   updateStepTrack(snapshot.state);
   renderVision(snapshot.vision, snapshot.alarm);
   renderPlc(snapshot.plc);
@@ -970,13 +1285,13 @@ function renderStatus(snapshot) {
   const kw = snapshot.kilews;
   if (kw) {
     if (kw.connected) {
-      setBadge("#kilewsConnBadge", "控制器在线", true);
+      setBadge("#kilewsConnBadge", "\u63a7\u5236\u5668\u5728\u7ebf", true);
     } else {
-      setBadge("#kilewsConnBadge", snapshot.kilews && !kw.connected ? "控制器离线" : "--", false);
+      setBadge("#kilewsConnBadge", snapshot.kilews && !kw.connected ? "\u63a7\u5236\u5668\u79bb\u7ebf" : "--", false);
     }
     $("#kilewsLiveJob").textContent = kw.current_job ? `J${kw.current_job}/S${kw.current_seq}` : "--";
-    $("#kilewsLiveTorque").textContent = kw.torque_nm != null ? `${kw.torque_nm.toFixed(2)} N·m` : "--";
-    $("#kilewsLiveAngle").textContent = kw.angle_deg != null ? `${kw.angle_deg.toFixed(1)}°` : "--";
+    $("#kilewsLiveTorque").textContent = kw.torque_nm != null ? `${kw.torque_nm.toFixed(2)} N路m` : "--";
+    $("#kilewsLiveAngle").textContent = kw.angle_deg != null ? `${kw.angle_deg.toFixed(1)}掳` : "--";
     const rcode = kw.result_code;
     const rlabels = {4:"OK",5:"OK-SEQ",6:"OK-JOB",7:"NG",8:"NS"};
     const rlabel = rlabels[rcode] || rcode || "--";
@@ -994,6 +1309,8 @@ function renderStatus(snapshot) {
 function renderVision(vision, alarm) {
   const panel = $(".camera-panel");
   const status = vision?.status || "WAIT";
+  const cameraPanelTitle = document.querySelector(".camera-panel .panel-head h2");
+  if (cameraPanelTitle) cameraPanelTitle.textContent = "O型圈视觉";
 
   if (panel) {
     panel.classList.remove("is-ok", "is-ng", "is-wait");
@@ -1005,7 +1322,7 @@ function renderVision(vision, alarm) {
   if (!list) return;
 
   if (detections.length === 0) {
-    list.innerHTML = '<span style=\"color:var(--muted);font-size:0.72rem;\">等待检测...</span>';
+    list.innerHTML = '<span class="vision-empty">等待检测...</span>';
     return;
   }
 
@@ -1022,10 +1339,10 @@ function renderVision(vision, alarm) {
     var cls = d.class_name || '?';
     var conf = d.confidence != null ? (d.confidence * 100).toFixed(1) + '%' : '?';
     var color = colors[cls] || '#ccc';
-    return '<div style=\"display:flex;align-items:center;gap:0.4rem;padding:0.15rem 0;border-bottom:1px solid rgba(255,255,255,.04);\">' +
-      '<span style=\"display:inline-block;width:10px;height:10px;border-radius:2px;background:' + color + ';flex-shrink:0;\"></span>' +
-      '<span style=\"font-size:0.8rem;font-weight:700;color:var(--ink);flex:1;\">' + escapeHtml(cls) + '</span>' +
-      '<span style=\"font-size:0.72rem;color:var(--muted);font-family:Consolas,monospace;\">' + conf + '</span>' +
+    return '<div class="vision-detection-item">' +
+      '<span class="vision-detection-dot" style=\"background:' + color + ';\"></span>' +
+      '<span class="vision-detection-label">' + escapeHtml(cls) + '</span>' +
+      '<span class="vision-detection-conf">' + conf + '</span>' +
       '</div>';
   }).join('');
 }
@@ -1052,7 +1369,9 @@ function updateStepTrack(state) {
 }
 
 function plcReady(plc) {
+  const connected = !!(plc && plc.last_seen && plc.last_seen !== "PLC disconnected" && !String(plc.last_seen).startsWith("Error:"));
   return (
+    connected &&
     plc.auto_mode &&
     plc.estop_ok &&
     plc.safety_ok &&
@@ -1065,21 +1384,38 @@ function plcReady(plc) {
   );
 }
 
+function plcAutoMode(plc) {
+  if (!plc) return false;
+  if (plc.auto_mode === true || plc.auto_mode === 1 || plc.auto_mode === "1") return true;
+  const manualMode = plc.m_manual_mode;
+  return manualMode === false || manualMode === 0 || manualMode === "0";
+}
+
 function renderPlc(plc) {
+  const plcPanelTitle = document.querySelector(".plc-panel .panel-head h2");
+  if (plcPanelTitle) plcPanelTitle.textContent = "PLC 条件";
+  const plcReadyBadge = document.getElementById("plcReadyBadge");
+  if (plcReadyBadge && (plcReadyBadge.textContent || "").includes("妫")) {
+    plcReadyBadge.textContent = "检查中";
+  }
+  const plcConnectBtn = document.getElementById("plcConnectBtn");
+  if (plcConnectBtn) plcConnectBtn.textContent = "连接";
+  const plcDisconnectBtn = document.getElementById("plcDisconnectBtn");
+  if (plcDisconnectBtn) plcDisconnectBtn.textContent = "断开";
+
   const mBits = [
-    // PLC → PC (M10.x, M11.x)
+    // PLC -> PC (M10.x, M11.x)
     ["m_manual_mode",          "M0.3 手动/自动"],
     ["m_estop",                "M0.4 急停"],
     ["m_plc_ready",            "M0.5 PLC就绪"],
     ["m_plc_reset",            "M0.6 PLC复位"],
     ["m_plc_tightening_done",  "M10.2 拧紧完成"],
-    // PC→PLC outputs
-    ["m_product_ready",        "M0.0 产品就绪(PC→)"],
-    ["m_tightening_ok",        "M0.1 拧紧OK(PC→)"],
-    ["m_scan_complete",        "M0.2 扫码完成(PC→)"],
-    ["m_disable_scan",         "M0.7 屏蔽扫码(PC→)"],
-    ["m_tightening_ng",        "M1.0 拧紧NG(PC→)"],
-    ["m_scan_complete",        "M0.2 扫码合格"],
+    // PC -> PLC outputs
+    ["m_product_ready",        "M0.0 产品就绪(PC->PLC)"],
+    ["m_tightening_ok",        "M0.1 拧紧OK(PC->PLC)"],
+    ["m_scan_complete",        "M0.2 扫码完成(PC->PLC)"],
+    ["m_disable_scan",         "M0.7 屏蔽扫码(PC->PLC)"],
+    ["m_tightening_ng",        "M1.0 拧紧NG(PC->PLC)"],
   ];
   var grid = document.getElementById("plcMBitsGrid");
   if (grid) {
@@ -1096,16 +1432,28 @@ function renderPlc(plc) {
 function renderAutomation(snapshot) {
   var auto = snapshot.automation || {};
   var isAuto = auto.active === true;
-  var plcAuto = snapshot.plc?.m_manual_mode === false;  // M0.3=0 = auto
+  var plcAuto = plcAutoMode(snapshot.plc);  // M0.3=0 = auto
+  var plcState = snapshot.plc || {};
+  var st = snapshot.state;
+  var resumableAutoStates = [
+    "vision_wait_stable",
+    "vision_check_cover",
+    "plc_handshake",
+    "tightening_wait",
+    "tightening_eval",
+    "pending_scan",
+  ];
+  var shouldResumeAutoCycle = plcAuto && !isAuto && resumableAutoStates.indexOf(st) >= 0;
 
-  // Auto-start if PLC is in auto mode but HMI automation not yet running
-  if (plcAuto && !isAuto) {
+  // Resume any in-flight auto cycle even if the settings toggle was switched off mid-process.
+  if (shouldResumeAutoCycle || (plcAuto && !isAuto)) {
+    setBadge("#autoBadge", "自动模式(启动中)", true);
     api("/api/automation/start", {}).catch(function() {});
     return;  // next poll will reflect new state
   }
 
   // Auto badge
-  setBadge("#autoBadge", isAuto ? "自动化运行" : "手动模式", isAuto);
+  setBadge("#autoBadge", isAuto ? "\u81ea\u52a8\u8fd0\u884c" : "\u624b\u52a8\u6a21\u5f0f", isAuto);
 
   // Stage label
   var stageLabel = document.getElementById("autoStageLabel");
@@ -1113,30 +1461,27 @@ function renderAutomation(snapshot) {
     if (!isAuto) {
       stageLabel.textContent = "自动化未运行";
     } else {
-      var st = snapshot.state;
       var stageMap = {
         "vision_wait_stable": "阶段 1/7: O型圈",
-        "vision_check_cover": "阶段 2/7: 膨胀阀",
+        "vision_check_cover": "阶段 2/7: 二维码",
         "plc_handshake": "阶段 3/7: 压紧",
         "tightening_wait": "阶段 4/7: 拧紧",
         "tightening_eval": "阶段 5/7: 判定",
         "pending_scan": "阶段 6/7: 扫码",
         "complete": "阶段 7/7: 完成",
-        "pending_scan": "等待扫码绑定",
-        "complete": "追溯完成",
       };
       stageLabel.textContent = stageMap[st] || st;
     }
   }
 
   // PLC connection badge
-  var plcConn = auto.plc_connected;
+  var plcConn = !!(plcState.last_seen && plcState.last_seen !== "PLC disconnected");
   setBadge("#autoPlcBadge", plcConn ? "PLC: 在线" : "PLC: 离线", plcConn);
 
   // PLC connection text
   var plcConnText = document.getElementById("plcConnText");
   if (plcConnText) {
-    plcConnText.textContent = plcConn ? "已连接" : "未连接";
+    plcConnText.textContent = plcConn ? "\u5df2\u8fde\u63a5" : "\u672a\u8fde\u63a5";
     plcConnText.style.color = plcConn ? "var(--green)" : "var(--red)";
   }
 
@@ -1149,9 +1494,9 @@ function renderAutomation(snapshot) {
     if (isAuto) {
       var prog = auto.stability_progress || 0;
       var target = auto.stability_target || 2.0;
-      stabProg.textContent = "稳定 " + prog.toFixed(1) + "s / " + target.toFixed(1) + "s";
+      stabProg.textContent = "\u7a33\u5b9a " + prog.toFixed(1) + "s / " + target.toFixed(1) + "s";
       var ss = auto.stability_status || "unstable";
-      stabStatus.textContent = ss === "stable_ok" ? "✓ 稳定" : ss === "wrong_count" ? "✗ 数量异常" : "检测中...";
+      stabStatus.textContent = ss === "stable_ok" ? "\u2713 \u7a33\u5b9a" : ss === "wrong_count" ? "\u2717 \u6570\u91cf\u5f02\u5e38" : "\u68c0\u6d4b\u4e2d...";
       stabStatus.style.color = ss === "stable_ok" ? "var(--green)" : ss === "wrong_count" ? "var(--red)" : "var(--muted)";
       stabStatus.style.display = "";
     }
@@ -1167,14 +1512,14 @@ function renderAutomation(snapshot) {
       var ratios = auto.coverage_ratios || [];
       if (ratios.length > 0) {
         var ioaVals = ratios.map(function(r) { return (r.ioa * 100).toFixed(1) + "%"; }).join(", ");
-        covText.textContent = "覆盖 " + ioaVals;
+        covText.textContent = "\u4e8c\u7ef4\u7801/\u8986\u76d6 " + ioaVals;
       } else {
-        covText.textContent = "覆盖 --";
+        covText.textContent = "\u4e8c\u7ef4\u7801 --";
       }
       covText.style.display = "";
       var cs = auto.coverage_status || "waiting";
-      covStatus.textContent = cs === "covered" ? "✓ 已覆盖" : cs === "plc_handshake" ? "→ PLC" : cs === "plc_waiting" ? "PLC等待" : "检测中...";
-      covStatus.style.color = cs === "covered" || cs === "plc_handshake" ? "var(--green)" : "var(--muted)";
+      covStatus.textContent = cs === "covered" || cs === "detected" ? "\u2713 \u5df2\u68c0\u6d4b" : cs === "plc_handshake" ? "\u2192 PLC" : cs === "plc_waiting" ? "PLC\u7b49\u5f85" : "\u68c0\u6d4b\u4e2d...";
+      covStatus.style.color = cs === "covered" || cs === "detected" || cs === "plc_handshake" ? "var(--green)" : "var(--muted)";
       covStatus.style.display = "";
     }
   }
@@ -1187,15 +1532,19 @@ function renderAutomation(snapshot) {
 }
 
 function renderBolts(bolts) {
+  const tighteningPanelTitle = document.querySelector(".tightening-panel .panel-head h2");
+  if (tighteningPanelTitle) tighteningPanelTitle.textContent = "奇力速拧紧";
   $("#boltCards").innerHTML = bolts
     .map((bolt) => {
-      const torque = bolt.torque_nm ?? (bolt.bolt_no === 1 ? 4.5 : 4.52);
-      const angle = bolt.angle_deg ?? (bolt.bolt_no === 1 ? 91.2 : 90.7);
+      const torque = bolt.torque_nm;
+      const angle = bolt.angle_deg;
+      const torqueValue = torque === null || torque === undefined || torque === "" ? "" : asFixed(torque);
+      const angleValue = angle === null || angle === undefined || angle === "" ? "" : asFixed(angle);
       return `
         <div class="bolt-card">
-          <strong>螺丝 ${bolt.bolt_no}</strong>
-          <label>扭矩 Nm<input id="bolt${bolt.bolt_no}Torque" type="number" step="0.01" value="${asFixed(torque)}"></label>
-          <label>角度 °<input id="bolt${bolt.bolt_no}Angle" type="number" step="0.01" value="${asFixed(angle)}"></label>
+          <strong>螺栓 ${bolt.bolt_no}</strong>
+          <label>扭矩 Nm<input id="bolt${bolt.bolt_no}Torque" type="number" step="0.01" value="${torqueValue}"></label>
+          <label>角度 °<input id="bolt${bolt.bolt_no}Angle" type="number" step="0.01" value="${angleValue}"></label>
           <button data-tighten="${bolt.bolt_no}" class="${bolt.result === "OK" ? "secondary" : "primary"}">${bolt.result}</button>
         </div>
       `;
@@ -1210,7 +1559,7 @@ function renderBolts(bolts) {
           torque_nm: Number($(`#bolt${boltNo}Torque`).value),
           angle_deg: Number($(`#bolt${boltNo}Angle`).value),
         });
-      }, `螺丝 ${boltNo} 拧紧数据已记录`);
+      }, `\u87ba\u4e1d ${boltNo} \u62e7\u7d27\u6570\u636e\u5df2\u8bb0\u5f55`);
     });
   });
 }
@@ -1275,7 +1624,7 @@ function fmtTime(val) {
 
 function renderImageLink(path) {
   if (!path) return "--";
-  return `<a href="/api/image?path=${encodeURIComponent(path)}" target="_blank" title="查看图片">图片</a>`;
+  return `<a href="/api/image?path=${encodeURIComponent(path)}" target="_blank" title="鏌ョ湅鍥剧墖">鍥剧墖</a>`;
 }
 
 function renderResultChip(val) {
@@ -1304,8 +1653,11 @@ function bindEvents() {
       if (button.dataset.tab === "production" && window._layoutManager) {
         setTimeout(() => window._layoutManager.applyLayout(), 50);
       }
-      if (button.dataset.tab === "datasets") {
+      if (button.dataset.tab === "production" || button.dataset.tab === "datasets") {
         applyDatasetsTransform();
+      }
+      if (button.dataset.tab === "production" || button.dataset.tab === "datasets") {
+        refreshCameraFeeds(true);
       }
     });
   });
@@ -1325,7 +1677,7 @@ function bindEvents() {
   $("#plcConnectBtn").addEventListener("click", async () => {
     try {
       var payload = await api("/api/plc/connect", {});
-      toast(payload.connected ? "PLC 已连接" : "PLC 连接失败");
+      toast(payload.connected ? "PLC \u5df2\u8fde\u63a5" : "PLC \u8fde\u63a5\u5931\u8d25");
     } catch (e) { toast(e.message); }
   });
   $("#plcDisconnectBtn").addEventListener("click", async () => {
@@ -1335,12 +1687,20 @@ function bindEvents() {
     } catch (e) { toast(e.message); }
   });
 
-  $("#scanBtn").addEventListener("click", () =>
-    runAction(() => api("/api/scan", { qr_code: $("#qrInput").value }), "二维码绑定完成"),
+  $("#scanBtn").addEventListener("click", async () => {
+    try {
+      await submitQrBinding($("#qrInput").value, "\u4e8c\u7ef4\u7801\u7ed1\u5b9a\u5b8c\u6210");
+    } catch (e) {
+      toast(e.message);
+    }
+  });
+
+  $("#skipScanBtn").addEventListener("click", () =>
+    runAction(() => api("/api/scan/skip", {}), "\u5df2\u8df3\u8fc7\u626b\u7801"),
   );
 
   $("#reworkBtn").addEventListener("click", () =>
-    runAction(() => api("/api/rework", { choice: "返修" }), "PLC 返修选择已记录"),
+    runAction(() => api("/api/rework", { choice: "\u8fd4\u4fee" }), "PLC \u8fd4\u4fee\u9009\u62e9\u5df2\u8bb0\u5f55"),
   );
 
   $("#refreshBtn").addEventListener("click", loadStatus);
@@ -1348,39 +1708,49 @@ function bindEvents() {
   $("#productSelect").addEventListener("change", async () => {
     const product = (settings.products || []).find((item) => item.product_model === $("#productSelect").value);
     if (!product) return;
-    // Write Kilews params for the new product
+    settings.station.active_product_model = product.product_model;
+    settings.station.active_recipe_no = product.recipe_no;
+    window.__selectedProduct = product.product_model;
+    renderProductSummary(statusSnapshot);
+
+    try {
+      await api("/api/settings", {
+        station: {
+          active_product_model: product.product_model,
+          active_recipe_no: product.recipe_no,
+        },
+      });
+    } catch (e) {
+      console.error("Persist active product failed:", e);
+    }
+
     try {
       await api("/api/kilews/write-params", { product_model: product.product_model });
-      // Update local settings + display
-      settings.station.active_product_model = product.product_model;
-      settings.station.active_recipe_no = product.recipe_no;
-      window.__selectedProduct = product.product_model;
-      // Write Kilews params
     } catch (e) {
-      // Kilews might not be connected
+      console.error("Write Kilews params failed:", e);
     }
   });
 
   $("#addProductBtn").addEventListener("click", () => {
     settings.products = collectProductRows();
     if (settings.products.length >= MAX_PRODUCTS) {
-      toast("产品设置最多 255 行");
+      toast("\u4ea7\u54c1\u8bbe\u7f6e\u6700\u591a 255 \u884c");
       return;
     }
     settings.products.push(productTemplate(settings.products.length));
     renderProductTable();
-    toast("已增加一行产品");
+    toast("\u5df2\u589e\u52a0\u4e00\u884c\u4ea7\u54c1");
   });
 
   $("#addPersonBtn").addEventListener("click", () => {
     settings.personnel = collectPersonRows();
     if (settings.personnel.length >= MAX_PERSONNEL) {
-      toast("人员最多 255 个");
+      toast("\u4eba\u5458\u6700\u591a 255 \u4e2a");
       return;
     }
     settings.personnel.push(personTemplate(settings.personnel.length));
     renderPersonTable();
-    toast("已增加一个人员");
+    toast("\u5df2\u589e\u52a0\u4e00\u4e2a\u4eba\u5458");
   });
 
   $("#saveSettingsBtn").addEventListener("click", async () => {
@@ -1451,7 +1821,7 @@ function bindEvents() {
       settings = await api("/api/settings", patch);
       renderSettings();
       renderProductOptions();
-    }, "设置已保存");
+    }, "\u8bbe\u7f6e\u5df2\u4fdd\u5b58");
   });
 
   $("#queryRecordsBtn").addEventListener("click", async () => {
@@ -1460,7 +1830,7 @@ function bindEvents() {
       const status = encodeURIComponent($("#recordStatus").value);
       const payload = await api(`/api/records?keyword=${keyword}&status=${status}&limit=200`);
       renderRecordRows(payload.records);
-      toast("查询完成");
+      toast("鏌ヨ瀹屾垚");
     } catch (error) {
       toast(error.message);
     }
@@ -1469,7 +1839,7 @@ function bindEvents() {
   $("#kilewsConnectBtn").addEventListener("click", async () => {
     try {
       const payload = await api("/api/kilews/connect", {});
-      $("#kilewsConnMsg").textContent = payload.connected ? "已连接" : "连接失败";
+      $("#kilewsConnMsg").textContent = payload.connected ? "\u5df2\u8fde\u63a5" : "\u8fde\u63a5\u5931\u8d25";
       $("#kilewsConnMsg").style.color = payload.connected ? "var(--green)" : "var(--red)";
     } catch (e) { toast(e.message); }
   });
@@ -1477,7 +1847,7 @@ function bindEvents() {
   $("#kilewsDisconnectBtn").addEventListener("click", async () => {
     try {
       await api("/api/kilews/disconnect", {});
-      $("#kilewsConnMsg").textContent = "已断开";
+      $("#kilewsConnMsg").textContent = "宸叉柇寮€";
       $("#kilewsConnMsg").style.color = "var(--muted)";
     } catch (e) { toast(e.message); }
   });
@@ -1487,7 +1857,7 @@ function bindEvents() {
       const product = (settings.products || []).find(
         p => p.product_model === settings.station.active_product_model
       );
-      if (!product) { toast("未选择产品"); return; }
+      if (!product) { toast("鏈€夋嫨浜у搧"); return; }
       const result = await api("/api/kilews/write-all", {
         torque_target_nm: product.torque_target_nm,
         torque_min_nm: product.torque_min_nm,
@@ -1499,13 +1869,13 @@ function bindEvents() {
         target_type: 2,
       });
       if (result.ok) {
-        $("#kilewsConnMsg").textContent = `写入成功 (${result.written} 步)`;
+        $("#kilewsConnMsg").textContent = `鍐欏叆鎴愬姛 (${result.written} 姝?`;
         $("#kilewsConnMsg").style.color = "var(--green)";
-        toast("参数已写入控制器");
+        toast("鍙傛暟宸插啓鍏ユ帶鍒跺櫒");
       } else {
-        $("#kilewsConnMsg").textContent = "写入失败: " + (result.error || "未知");
+        $("#kilewsConnMsg").textContent = "鍐欏叆澶辫触: " + (result.error || "鏈煡");
         $("#kilewsConnMsg").style.color = "var(--red)";
-        toast("写入失败，请查看详情");
+        toast("鍐欏叆澶辫触锛岃鏌ョ湅璇︽儏");
       }
     } catch (e) { toast(e.message); }
   });
@@ -1513,8 +1883,8 @@ function bindEvents() {
   $("#exportDailyBtn").addEventListener("click", async () => {
     await runAction(async () => {
       const payload = await api("/api/export/daily", {});
-      $("#exportPath").textContent = `已导出：${payload.export_path}`;
-    }, "日报 Excel 已导出");
+      $("#exportPath").textContent = `宸插鍑猴細${payload.export_path}`;
+    }, "\u65e5\u62a5 Excel \u5df2\u5bfc\u51fa");
   });
 
   $("#captureBtn").addEventListener("click", async () => {
@@ -1523,15 +1893,15 @@ function bindEvents() {
         product_model: $("#productSelect").value,
         transform: datasetsTransform,
       });
-      $("#capturePath").textContent = `已保存：${payload.image_path}`;
-    }, "抓拍图片已保存");
+      $("#capturePath").textContent = `宸蹭繚瀛橈細${payload.image_path}`;
+    }, "\u6293\u62cd\u56fe\u7247\u5df2\u4fdd\u5b58");
   });
 
   $("#exportDatasetBtn").addEventListener("click", async () => {
     await runAction(async () => {
       const payload = await api("/api/datasets/export", { product_model: $("#productSelect").value });
-      $("#datasetPath").textContent = `已生成：${payload.dataset_path}`;
-    }, "本地 datasets 已生成");
+      $("#datasetPath").textContent = `宸茬敓鎴愶細${payload.dataset_path}`;
+    }, "\u672c\u5730 datasets \u5df2\u751f\u6210");
   });
 
   // ---- Datasets page controls ----
@@ -1554,19 +1924,21 @@ function bindEvents() {
       label.style.display = "";
       setTimeout(() => { label.style.display = "none"; }, 2000);
     }
-    toast("相机设置已保存");
+    toast("\u76f8\u673a\u8bbe\u7f6e\u5df2\u4fdd\u5b58");
   });
 
   // Camera connect / disconnect
   document.getElementById("cameraConnectBtn")?.addEventListener("click", async () => {
     try {
       const payload = await api("/api/camera/connect", {});
-      if (payload.ok) {
+      if (payload.ok && !payload.is_mock) {
         const badge = document.getElementById("captureCameraBadge");
         if (badge) { badge.textContent = "实时画面"; badge.className = "badge good"; }
-        toast("相机已启动");
+        toast("\u76f8\u673a\u5df2\u542f\u52a8");
       } else {
-        toast("相机启动失败");
+        const badge = document.getElementById("captureCameraBadge");
+        if (badge) { badge.textContent = "相机未连接"; badge.className = "badge bad"; }
+        toast(payload.error || "相机启动失败");
       }
     } catch (e) {
       toast(`相机启动失败: ${e.message}`);
@@ -1677,40 +2049,71 @@ async function boot() {
     window._layoutManager.init();
   }
 
-  // Camera feed polling (every 200ms)
+  // Shared camera feed polling: only one visible panel refreshes at a time.
+  startCameraFeedPolling();
+  /* legacy polling
   setInterval(() => {
     const img = document.getElementById('cameraFeed');
     if (img) {
       img.onerror = () => {
         const status = document.getElementById('cameraStatus');
-        if (status) status.textContent = '相机未连接';
+        if (status) status.textContent = '鐩告満鏈繛鎺?;
       };
       img.onload = () => {
         const status = document.getElementById('cameraStatus');
-        if (status) status.textContent = '实时画面';
+        if (status) status.textContent = '瀹炴椂鐢婚潰';
         // Re-apply saved transform after each frame load
         applyDatasetsTransform();
       };
       img.src = '/api/vision/latest-frame?t=' + Date.now();
     }
   }, 200);
+  */
 
-  // Datasets page camera: auto-connect + restore settings + feed
-  startDatasetsFeed();
+  // Datasets page camera: auto-connect + restore settings.
   setTimeout(() => autoConnectAndRestore(), 500);
+
+function checkConnections(snapshot) {
+  var errors = [];
+  // 1. Camera
+  var cameraOk = snapshot.vision && snapshot.vision.status !== "WAIT";
+  if (!cameraOk) errors.push("相机 192.168.0.101 未连接");
+  // 2. PLC
+  var plcOk = snapshot.plc && snapshot.plc.auto_mode !== undefined;
+  if (!plcOk) errors.push("PLC 192.168.0.10 未连接");
+  // 3. Kilews
+  var kwOk = snapshot.kilews && snapshot.kilews.connected;
+  if (!kwOk) errors.push("拧紧枪 192.168.0.105 未连接");
+  // 4. Scanner
+  var scannerOk = snapshot.scanner_connected !== false && lastQr !== undefined;
+  // Scanner is harder to check via status - use badge color
+
+  if (errors.length > 0) {
+    setBadge("#connectionBadge", errors[0], false);
+    toast("硬件连接异常: " + errors.join(", "));
+  } else {
+    setBadge("#connectionBadge", "全部在线", true);
+  }
+}
 
   await loadSettings();
   await loadStatus();
+
+  // Connection check: verify all 4 hardware devices
+  checkConnections(statusSnapshot);
 
   // Auto-login and auto-start production (after settings loaded)
   autoLoginAndStart();
   const payload = await api("/api/records?limit=200");
   renderRecordRows(payload.records);
+  startStatusPolling();
+  return;
   setInterval(() => loadStatus().catch(() => setBadge("#connectionBadge", "连接异常", false)), 1500);
 }
 
 // Graceful shutdown on browser close
 window.addEventListener("beforeunload", () => {
+  releaseCameraPollLease();
   navigator.sendBeacon("/api/shutdown");
 });
 
