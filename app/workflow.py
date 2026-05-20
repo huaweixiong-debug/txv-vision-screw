@@ -200,14 +200,6 @@ class StationWorkflow:
         vcfg = settings.get("vision", {})
         camera_ip = vcfg.get("camera_ip", "192.168.0.111")
         mvs_path = vcfg.get("mvs_path", r"C:\Program Files (x86)\MVS\Development\Samples\Python\MvImport")
-        # Don't reconnect if already running
-        if self.camera is not None and self.camera.connected:
-            self.camera_status = {
-                "connected": True, "is_mock": isinstance(self.camera, MockCameraDevice),
-                "backend": "mock" if isinstance(self.camera, MockCameraDevice) else "mvs",
-                "camera_ip": camera_ip, "error": "",
-            }
-            return
         self.camera_status = {
             "connected": False,
             "is_mock": False,
@@ -918,11 +910,7 @@ class StationWorkflow:
                 print(f"[Kilews] bolt_no={bolt_no} count_delta={count_delta} next_waits={bolt_no}", flush=True)
                 if 1 <= bolt_no <= len(self.bolts):
                     bolt = self.bolts[bolt_no - 1]
-                    if result == "NG":
-                        # NG: don't record, allow re-tightening
-                        print(f"[Kilews] SKIP NG bolt{bolt_no}: torque={torque:.3f} angle={angle:.1f}", flush=True)
-                        self._last_kilews_signature = result_signature
-                    elif bolt.result == "WAIT" or bolt.torque_nm is None or bolt.angle_deg is None:
+                    if bolt.result == "WAIT" or bolt.torque_nm is None or bolt.angle_deg is None:
                         self._last_kilews_signature = result_signature
                         self._tightening_last_progress_at = now
                         bolt.torque_nm = torque
@@ -1063,7 +1051,7 @@ class StationWorkflow:
         self.storage.add_event(self.current_record_id, "operator.login", f"{self.operator} / {self.shift}")
         return self.snapshot()
 
-    def start_cycle(self, product_model: str | None = None, recipe_no: int | None = None, operator: str | None = None) -> dict[str, Any]:
+    def start_cycle(self, product_model: str | None = None, recipe_no: int | None = None) -> dict[str, Any]:
         # Don't create duplicate if already running
         if self.current_record_id is not None and self.state not in ("idle", "complete"):
             return {"ok": True, "record_id": self.current_record_id, "skipped": True}
@@ -1071,14 +1059,11 @@ class StationWorkflow:
         product_cfg = self.product_config(product)
         recipe = int(recipe_no or product_cfg.get("recipe_no") or self.settings["station"]["active_recipe_no"])
         bolt_count = int(product_cfg["bolt_count"])
-        # Use provided operator, or the current operator, or the default
-        record_operator = operator or self.operator or self.settings["auth"]["default_operator"]
-        self.operator = record_operator  # sync for this cycle
         self.current_record = self.storage.create_record(
             product_model=product,
             recipe_no=recipe,
             station_id=self.settings["station"]["station_id"],
-            operator=record_operator,
+            operator=self.operator,
             shift=self.shift,
             bolt_count=bolt_count,
             model_version=self.settings["vision"]["model_version"],

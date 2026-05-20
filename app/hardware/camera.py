@@ -247,6 +247,11 @@ class MvsCameraDevice:
             print(f"[Camera] set_exposure error: {exc}")
         return False
 
+    def set_roi(self, x: int, y: int, w: int, h: int) -> None:
+        """Set ROI crop (x, y, w, h in source pixels). Inference, display, capture all use this ROI."""
+        self._roi_rect = (x, y, w, h)
+        print(f"[Camera] ROI set: x={x} y={y} w={w} h={h}")
+
     # ------------------------------------------------------------------
     # MVS SDK internals
     # ------------------------------------------------------------------

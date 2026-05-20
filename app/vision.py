@@ -43,11 +43,14 @@ class VisionInference:
         self.dedup_overlap = dedup_overlap
         self.yolo_classes = yolo_classes or ["NG", "O_Ring_L", "O_Ring_S", "QR", "TXV"]
         self.inference_size = max(320, min(int(inference_size), 416))
+        self.class_conf_map = {"TXV": 0.15, "QR": 0.15}
+        self.roi_rect = None  # (x, y, w, h) optional display ROI filter
 
         resolved = Path(model_path)
         if not resolved.is_absolute():
             resolved = resolve_path(model_path)
         self.model_path = resolved
+
 
         if resolved.exists():
             try:
@@ -117,6 +120,14 @@ class VisionInference:
                 cy = xywhn[1] * self.inference_size * scale + y_start
                 bw = xywhn[2] * self.inference_size * scale
                 bh = xywhn[3] * self.inference_size * scale
+
+                # Per-class confidence override
+                min_conf = self.class_conf_map.get(cls_name, self.confidence_threshold)
+                if conf < min_conf:
+                    continue
+
+                if not self._bbox_fully_inside_roi(cx, cy, bw, bh):
+                    continue
 
                 detections.append({
                     "class_id": cls_id,
@@ -190,6 +201,20 @@ class VisionInference:
                     (16, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, text_color, 2)
 
         return bgr_image
+
+    def _bbox_fully_inside_roi(self, cx: float, cy: float, bw: float, bh: float) -> bool:
+        if not self.roi_rect:
+            return True
+
+        roi_x, roi_y, roi_w, roi_h = self.roi_rect
+        x1 = cx - (bw / 2.0)
+        y1 = cy - (bh / 2.0)
+        x2 = cx + (bw / 2.0)
+        y2 = cy + (bh / 2.0)
+        roi_x2 = roi_x + roi_w
+        roi_y2 = roi_y + roi_h
+
+        return x1 >= roi_x and y1 >= roi_y and x2 <= roi_x2 and y2 <= roi_y2
 
     def _normalize_class_name(self, cls_name: str) -> str:
         raw = str(cls_name or "").strip()

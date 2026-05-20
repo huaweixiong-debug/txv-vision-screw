@@ -341,7 +341,6 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
                     self.context.workflow.start_cycle(
                         product_model=body.get("product_model"),
                         recipe_no=body.get("recipe_no"),
-                        operator=body.get("operator"),
                     )
                 )
                 return
