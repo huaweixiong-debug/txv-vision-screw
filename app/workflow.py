@@ -182,6 +182,8 @@ class StationWorkflow:
     def _init_kilews(self, settings: dict[str, Any]) -> None:
         kcfg = settings.get("kilews", {})
         if kcfg.get("enabled"):
+            if isinstance(self.kilews, KilewsDevice) and self.kilews.modbus.connected:
+                return  # already connected, don't recreate
             modbus = ModbusClient(
                 ip=kcfg.get("ip", "192.168.3.10"),
                 port=int(kcfg.get("port", 502)),
@@ -191,7 +193,7 @@ class StationWorkflow:
             self.kilews = KilewsDevice(modbus)
             if kcfg.get("auto_connect"):
                 self._connect_kilews()
-        else:
+        elif not isinstance(self.kilews, MockKilewsClient):
             self.kilews = MockKilewsClient()
 
     def _init_camera(self, settings: dict[str, Any]) -> None:
