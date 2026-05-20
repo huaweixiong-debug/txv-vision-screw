@@ -32,11 +32,23 @@ class MockCameraDevice:
     def get_latest_raw_jpeg(self) -> bytes | None:
         return self.get_latest_jpeg()  # mock: same as normal jpeg
 
-    def set_inference(self, vision_inference: Any, interval: float = 0.5) -> None:
+    def set_inference(
+        self,
+        vision_inference: Any,
+        interval: float = 0.5,
+        should_infer: Any = None,
+        interval_selector: Any = None,
+    ) -> None:
         pass  # mock — no-op
 
     def get_latest_inference(self) -> dict[str, Any] | None:
         return None
+
+    def mark_stream_requested(self) -> None:
+        pass
+
+    def has_recent_stream_request(self, window_s: float = 3.0) -> bool:
+        return self.connected
 
     def get_exposure(self) -> float | None:
         return getattr(self, "_mock_exposure_us", None)
@@ -86,12 +98,22 @@ class MvsCameraDevice:
         self._frame_lock = threading.Lock()
         self._cam = None
         self._MvCamera = None
+        self._latest_frame_bgr: Any = None
+        self._latest_frame_version = 0
+        self._latest_raw_jpeg_version = -1
+        self._display_jpeg_quality = 55
+        self._raw_jpeg_quality = 80
+        self._display_max_width = 1280
+        self._frame_interval = 0.25
         # YOLO inference (optional)
         self._vision_inference: Any = None
         self._inference_interval: float = 0.5
         self._last_infer_time: float = 0.0
         self._latest_inference: dict[str, Any] | None = None
         self._infer_lock = threading.Lock()
+        self._should_infer: Any = None
+        self._interval_selector: Any = None
+        self._last_stream_request_at: float = 0.0
 
     # ------------------------------------------------------------------
     # Public API
@@ -123,6 +145,8 @@ class MvsCameraDevice:
         self.connected = False
         with self._frame_lock:
             self._latest_jpeg = None
+            self._latest_raw_jpeg = None
+            self._latest_frame_bgr = None
         print("[Camera] Disconnected")
 
     def get_latest_jpeg(self) -> bytes | None:
@@ -131,16 +155,63 @@ class MvsCameraDevice:
 
     def get_latest_raw_jpeg(self) -> bytes | None:
         with self._frame_lock:
-            return self._latest_raw_jpeg
+            frame = self._latest_frame_bgr
+            frame_version = self._latest_frame_version
+            cached = self._latest_raw_jpeg
+            cached_version = self._latest_raw_jpeg_version
+        if cached is not None and cached_version == frame_version:
+            return cached
+        if frame is None:
+            return cached
+        try:
+            import cv2
 
-    def set_inference(self, vision_inference: Any, interval: float = 0.5) -> None:
+            ok, raw_buf = cv2.imencode(
+                ".jpg",
+                frame,
+                [cv2.IMWRITE_JPEG_QUALITY, self._raw_jpeg_quality],
+            )
+            if not ok:
+                return cached
+            raw_jpeg = raw_buf.tobytes()
+            with self._frame_lock:
+                if self._latest_frame_version == frame_version:
+                    self._latest_raw_jpeg = raw_jpeg
+                    self._latest_raw_jpeg_version = frame_version
+                return self._latest_raw_jpeg
+        except Exception as exc:
+            print(f"[Camera] raw jpeg encode failed: {exc}")
+            return cached
+
+    def set_inference(
+        self,
+        vision_inference: Any,
+        interval: float = 0.5,
+        should_infer: Any = None,
+        interval_selector: Any = None,
+    ) -> None:
         """Attach a VisionInference instance for real-time YOLO overlay."""
         self._vision_inference = vision_inference
         self._inference_interval = interval
+        self._should_infer = should_infer
+        self._interval_selector = interval_selector
+
+    def set_frame_interval(self, interval_s: float) -> None:
+        self._frame_interval = max(0.05, float(interval_s))
 
     def get_latest_inference(self) -> dict[str, Any] | None:
         with self._infer_lock:
             return dict(self._latest_inference) if self._latest_inference else None
+
+    def mark_stream_requested(self) -> None:
+        import time as _time
+
+        self._last_stream_request_at = _time.monotonic()
+
+    def has_recent_stream_request(self, window_s: float = 3.0) -> bool:
+        import time as _time
+
+        return (_time.monotonic() - self._last_stream_request_at) <= max(0.1, float(window_s))
 
     # ------------------------------------------------------------------
     # Exposure control
@@ -164,6 +235,10 @@ class MvsCameraDevice:
             return False
         try:
             mv = self._MvCamera
+            try:
+                self._cam.MV_CC_SetEnumValue("ExposureAuto", 0)
+            except Exception:
+                pass
             ret = self._cam.MV_CC_SetFloatValue("ExposureTime", float(value_us))
             if ret == mv.MV_OK:
                 return True
@@ -171,6 +246,11 @@ class MvsCameraDevice:
         except Exception as exc:
             print(f"[Camera] set_exposure error: {exc}")
         return False
+
+    def set_roi(self, x: int, y: int, w: int, h: int) -> None:
+        """Set ROI crop (x, y, w, h in source pixels). Inference, display, capture all use this ROI."""
+        self._roi_rect = (x, y, w, h)
+        print(f"[Camera] ROI set: x={x} y={y} w={w} h={h}")
 
     # ------------------------------------------------------------------
     # MVS SDK internals
@@ -268,6 +348,8 @@ class MvsCameraDevice:
 
         # Set continuous acquisition (trigger off)
         self._cam.MV_CC_SetEnumValue("TriggerMode", mv.MV_TRIGGER_MODE_OFF)
+        self._set_enum_if_supported("ExposureAuto", 0)
+        self._set_enum_if_supported("GainAuto", 0)
 
         # Set pixel format if available
         # MV-CU060-10GM is monochrome; try RGB8 if color, Mono8 if mono
@@ -275,6 +357,25 @@ class MvsCameraDevice:
             self._cam.MV_CC_SetEnumValue("PixelFormat", mv.PixelType_Gvsp_Mono8)
         except Exception:
             pass  # keep default
+
+        self._set_int_if_supported("Width", 2048)
+        self._set_int_if_supported("Height", 1536)
+
+    def _set_int_if_supported(self, key: str, value: int) -> None:
+        try:
+            ret = self._cam.MV_CC_SetIntValue(key, int(value))
+            if ret == self._MvCamera.MV_OK:
+                print(f"[Camera] {key} set to {value}")
+        except Exception as exc:
+            print(f"[Camera] set {key} skipped: {exc}")
+
+    def _set_enum_if_supported(self, key: str, value: int) -> None:
+        try:
+            ret = self._cam.MV_CC_SetEnumValue(key, int(value))
+            if ret == self._MvCamera.MV_OK:
+                print(f"[Camera] {key} set to {value}")
+        except Exception as exc:
+            print(f"[Camera] set {key} skipped: {exc}")
 
     def _start_grabbing(self) -> None:
         mv = self._MvCamera
@@ -288,26 +389,30 @@ class MvsCameraDevice:
         self._thread.start()
 
     def _grab_loop(self) -> None:
-        """Pull frames continuously using MV_FRAME_OUT (which wraps data ptr + info).
-
-        Per MVS SDK sample code, MV_CC_GetImageBuffer populates an MV_FRAME_OUT
-        struct whose pBufAddr field points to the raw pixel buffer, and whose
-        stFrameInfo sub-struct carries width / height / pixel-type / length.
-        """
+        """Pull frames with throttling to limit CPU usage."""
         mv = self._MvCamera
+        import time as _time
         import ctypes
 
-        # Pre-allocate convert buffer for fallback path
         payload_size = mv.MVCC_INTVALUE()
         ret = self._cam.MV_CC_GetIntValue("PayloadSize", payload_size)
         if ret != mv.MV_OK:
-            payload_size.nCurValue = 3072 * 2048  # 6 MP worst-case
+            payload_size.nCurValue = 3072 * 2048
         data_buf = (ctypes.c_ubyte * payload_size.nCurValue)()
 
         st_frame = mv.MV_FRAME_OUT()
+        _last_grab = 0.0
 
         while self._running:
             try:
+                # Throttle acquisition to avoid a busy grab loop between frames.
+                now = _time.monotonic()
+                elapsed = now - _last_grab
+                if elapsed < self._frame_interval:
+                    _time.sleep(min(0.2, self._frame_interval - elapsed))
+                    continue
+                _last_grab = now
+
                 ctypes.memset(ctypes.byref(st_frame), 0, ctypes.sizeof(st_frame))
                 ret = self._cam.MV_CC_GetImageBuffer(st_frame, 1000)
                 if ret != mv.MV_OK or not st_frame.pBufAddr:
@@ -325,6 +430,7 @@ class MvsCameraDevice:
         import ctypes
         import time as _time
         import numpy as np
+        import cv2
 
         mv = self._MvCamera
         info = st_frame.stFrameInfo
@@ -343,14 +449,12 @@ class MvsCameraDevice:
         try:
             # --- pixel conversion → BGR ---
             if pixel_format == mv.PixelType_Gvsp_Mono8:
-                import cv2
                 img = raw_bytes.reshape((height, width))
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             elif pixel_format in (
                 mv.PixelType_Gvsp_BayerRG8, mv.PixelType_Gvsp_BayerGB8,
                 mv.PixelType_Gvsp_BayerGR8, mv.PixelType_Gvsp_BayerBG8,
             ):
-                import cv2
                 img = raw_bytes.reshape((height, width))
                 conversions = {
                     mv.PixelType_Gvsp_BayerRG8: cv2.COLOR_BayerRG2BGR,
@@ -360,11 +464,9 @@ class MvsCameraDevice:
                 }
                 img = cv2.cvtColor(img, conversions.get(pixel_format, cv2.COLOR_BayerRG2BGR))
             elif pixel_format == mv.PixelType_Gvsp_RGB8_Packed:
-                import cv2
                 img = raw_bytes.reshape((height, width, 3))
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             else:
-                import cv2
                 conv = mv.MV_CC_PIXEL_CONVERT_PARAM()
                 ctypes.memset(ctypes.byref(conv), 0, ctypes.sizeof(conv))
                 conv.pSrcData = st_frame.pBufAddr
@@ -384,33 +486,74 @@ class MvsCameraDevice:
                     shape=(out_size,),
                 ).reshape((height, width, 3))
 
-            # --- Save raw JPEG (before inference overlay) ---
-            import cv2
-            _, raw_buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            frame_bgr = np.ascontiguousarray(img).copy()
             with self._frame_lock:
-                self._latest_raw_jpeg = raw_buf.tobytes()
+                self._latest_frame_bgr = frame_bgr
+                self._latest_frame_version += 1
+                self._latest_raw_jpeg = None
+                self._latest_raw_jpeg_version = -1
 
-            # --- YOLO inference (throttled) ---
-            if self._vision_inference is not None and getattr(self._vision_inference, 'model', None) is not None:
+            # --- YOLO inference (throttled and state-aware) ---
+            if (
+                self._vision_inference is not None
+                and getattr(self._vision_inference, "model", None) is not None
+                and self._can_run_inference()
+            ):
                 now = _time.monotonic()
-                if now - self._last_infer_time >= self._inference_interval:
+                if now - self._last_infer_time >= self._current_inference_interval():
                     try:
-                        infer_result = self._vision_inference.infer(img)
+                        infer_result = self._vision_inference.infer(frame_bgr)
                         with self._infer_lock:
                             self._latest_inference = infer_result
-                        if infer_result.get("detections"):
-                            img = self._vision_inference.draw_results(img, infer_result)
                         self._last_infer_time = now
                     except Exception as exc:
                         print(f"[Camera] YOLO inference error: {exc}")
 
-            # --- JPEG encode (inference overlay) ---
-            _, jpeg_buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            with self._infer_lock:
+                latest_inference = dict(self._latest_inference) if self._latest_inference else None
+
+            display_img = frame_bgr
+            if latest_inference and latest_inference.get("detections"):
+                display_img = self._vision_inference.draw_results(frame_bgr.copy(), latest_inference)
+
+            if display_img.shape[1] > self._display_max_width:
+                preview_height = max(1, int(display_img.shape[0] * self._display_max_width / display_img.shape[1]))
+                display_img = cv2.resize(
+                    display_img,
+                    (self._display_max_width, preview_height),
+                    interpolation=cv2.INTER_AREA,
+                )
+
+            ok, jpeg_buf = cv2.imencode(
+                ".jpg",
+                display_img,
+                [cv2.IMWRITE_JPEG_QUALITY, self._display_jpeg_quality],
+            )
+            if not ok:
+                return
             with self._frame_lock:
                 self._latest_jpeg = jpeg_buf.tobytes()
         except Exception as exc:
             if self._running:
                 print(f"[Camera] frame processing error: {exc}")
+
+    def _can_run_inference(self) -> bool:
+        if self._should_infer is None:
+            return True
+        try:
+            return bool(self._should_infer())
+        except Exception as exc:
+            print(f"[Camera] should_infer callback failed: {exc}")
+            return True
+
+    def _current_inference_interval(self) -> float:
+        if self._interval_selector is None:
+            return self._inference_interval
+        try:
+            return max(0.05, float(self._interval_selector()))
+        except Exception as exc:
+            print(f"[Camera] interval selector failed: {exc}")
+            return self._inference_interval
 
     def _stop_grabbing(self) -> None:
         if self._cam is not None:

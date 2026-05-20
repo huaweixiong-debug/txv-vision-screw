@@ -35,25 +35,34 @@ class VisionInference:
         iou_threshold: float = 0.3,
         dedup_overlap: float = 0.7,
         yolo_classes: list[str] | None = None,
-        inference_size: int = 1024,
+        inference_size: int = 416,
     ) -> None:
         self.model = None
         self.confidence_threshold = confidence_threshold
         self.iou_threshold = iou_threshold
         self.dedup_overlap = dedup_overlap
-        self.yolo_classes = yolo_classes or ["NG", "O_Ring", "QR", "TXV"]
-        self.inference_size = inference_size
+        self.yolo_classes = yolo_classes or ["NG", "O_Ring_L", "O_Ring_S", "QR", "TXV"]
+        self.inference_size = max(320, min(int(inference_size), 416))
+        self.class_conf_map = {"TXV": 0.15, "QR": 0.15}
+        self.roi_rect = None  # (x, y, w, h) optional display ROI filter
 
         resolved = Path(model_path)
         if not resolved.is_absolute():
             resolved = resolve_path(model_path)
         self.model_path = resolved
 
+
         if resolved.exists():
             try:
                 from ultralytics import YOLO
                 self.model = YOLO(str(resolved))
+                model_names = getattr(self.model, "names", None)
+                if isinstance(model_names, dict) and model_names:
+                    self.yolo_classes = [str(model_names[idx]) for idx in sorted(model_names)]
+                elif isinstance(model_names, (list, tuple)) and model_names:
+                    self.yolo_classes = [str(name) for name in model_names]
                 print(f"[Vision] Model loaded: {resolved}")
+                print(f"[Vision] Classes: {self.yolo_classes}")
             except Exception as exc:
                 print(f"[Vision] Model load failed: {exc}")
         else:
@@ -80,7 +89,11 @@ class VisionInference:
         crop = bgr_image[y_start:y_start + crop_size, x_start:x_start + crop_size]
 
         import cv2
-        input_img = cv2.resize(crop, (self.inference_size, self.inference_size))
+        input_img = cv2.resize(
+            crop,
+            (self.inference_size, self.inference_size),
+            interpolation=cv2.INTER_AREA,
+        )
 
         # Run inference with IoU threshold
         results = self.model(input_img, verbose=False, iou=self.iou_threshold, conf=self.confidence_threshold)
@@ -99,6 +112,7 @@ class VisionInference:
                 if cls_id >= len(self.yolo_classes):
                     continue
                 cls_name = self.yolo_classes[cls_id]
+                normalized_name = self._normalize_class_name(cls_name)
                 xywhn = box.xywhn[0].tolist()
 
                 # Map from inference-size normalized → crop pixel → full-res pixel
@@ -107,9 +121,17 @@ class VisionInference:
                 bw = xywhn[2] * self.inference_size * scale
                 bh = xywhn[3] * self.inference_size * scale
 
+                # Per-class confidence override
+                min_conf = self.class_conf_map.get(cls_name, self.confidence_threshold)
+                if conf < min_conf:
+                    continue
+
+                if not self._bbox_fully_inside_roi(cx, cy, bw, bh):
+                    continue
+
                 detections.append({
                     "class_id": cls_id,
-                    "class_name": cls_name,
+                    "class_name": normalized_name,
                     "confidence": round(conf, 4),
                     "cx": round(cx, 1),
                     "cy": round(cy, 1),
@@ -117,17 +139,22 @@ class VisionInference:
                     "height": round(bh, 1),
                 })
                 max_conf = max(max_conf, conf)
-                if cls_name in ("o_ring", "O_Ring"):
+                if normalized_name == "O_Ring":
                     o_ring_count += 1
 
-        # Dedup: per-class keep non-overlapping, then cross-class NG vs O_Ring
+        # Dedup: per-class keep non-overlapping
         detections = _dedup_per_class(detections, self.dedup_overlap)
         detections = _dedup_ng_vs_oring(detections, 0.001)
 
-        # Rule: if 2+ O_Ring present, suppress all TXV (false positives)
+        # Rule: TXV and O_Ring never coexist in same frame
+        # O_Ring phase: 2+ O_Ring → remove TXV
+        # TXV phase: TXV present → remove O_Ring (valve covers them)
         temp_oring = sum(1 for d in detections if d["class_name"] == "O_Ring")
+        temp_txv = sum(1 for d in detections if d["class_name"] == "TXV")
         if temp_oring >= 2:
             detections = [d for d in detections if d["class_name"] != "TXV"]
+        elif temp_txv >= 1:
+            detections = [d for d in detections if d["class_name"] != "O_Ring"]
 
         # O型圈合格: exactly 2 O_Ring, no NG
         o_ring_count = sum(1 for d in detections if d["class_name"] == "O_Ring")
@@ -175,6 +202,38 @@ class VisionInference:
 
         return bgr_image
 
+    def _bbox_fully_inside_roi(self, cx: float, cy: float, bw: float, bh: float) -> bool:
+        if not self.roi_rect:
+            return True
+
+        roi_x, roi_y, roi_w, roi_h = self.roi_rect
+        x1 = cx - (bw / 2.0)
+        y1 = cy - (bh / 2.0)
+        x2 = cx + (bw / 2.0)
+        y2 = cy + (bh / 2.0)
+        roi_x2 = roi_x + roi_w
+        roi_y2 = roi_y + roi_h
+
+        return x1 >= roi_x and y1 >= roi_y and x2 <= roi_x2 and y2 <= roi_y2
+
+    def _normalize_class_name(self, cls_name: str) -> str:
+        raw = str(cls_name or "").strip()
+        key = raw.lower().replace("-", "_").replace(" ", "_")
+        mapping = {
+            "o_ring": "O_Ring",
+            "oring": "O_Ring",
+            "o_ring_l": "O_Ring",
+            "o_ring_s": "O_Ring",
+            "expansion_valve": "TXV",
+            "valve": "TXV",
+            "txv": "TXV",
+            "qr": "QR",
+            "qrcode": "QR",
+            "ng": "NG",
+            "bolt": "Bolt",
+        }
+        return mapping.get(key, raw)
+
 
 def _iou(a: dict[str, Any], b: dict[str, Any]) -> float:
     ax1 = a["cx"] - a["width"] / 2
@@ -202,7 +261,9 @@ def _dedup_per_class(
     NG: up to 2, O_Ring: up to 2, QR: 1, TXV: 1."""
     max_per_class = {"NG": 2, "O_Ring": 2, "QR": 1, "TXV": 1}
     result: list[dict[str, Any]] = []
+    handled_classes: set[str] = set()
     for cls_name, limit in max_per_class.items():
+        handled_classes.add(cls_name)
         items = sorted(
             [d for d in detections if d["class_name"] == cls_name],
             key=lambda d: d["confidence"], reverse=True,
@@ -215,6 +276,11 @@ def _dedup_per_class(
                 continue
             kept.append(item)
         result.extend(kept)
+    extras = sorted(
+        [d for d in detections if d["class_name"] not in handled_classes],
+        key=lambda d: d["confidence"], reverse=True,
+    )
+    result.extend(extras)
     return result
 
 

@@ -18,16 +18,19 @@ from typing import Any
 # ============================================================
 
 REG_TORQUE_UNIT = 264
+TARGET_TYPE_ANGLE = 1
+TARGET_TYPE_TORQUE = 2
+ANGLE_SCALE = 1
 
 # Parameter buffer (1144-1163) — Step 1 fastening params
 REG_TARGET_TYPE = 1144      # 16-bit, 1=angle 2=torque
-REG_TARGET_ANGLE = 1145     # 32-bit (1145-1146), raw degrees
+REG_TARGET_ANGLE = 1145     # 32-bit (1145-1146), raw = controller angle units
 REG_TARGET_TORQUE = 1147    # 32-bit (1147-1148), raw = N.m × multiplier
 REG_SPEED = 1151            # 16-bit, RPM
 REG_TORQUE_HI = 1155        # 32-bit (1155-1156)
 REG_TORQUE_LO = 1157        # 32-bit (1157-1158)
-REG_ANGLE_HI = 1160         # 32-bit (1160-1161), raw degrees
-REG_ANGLE_LO = 1162         # 32-bit (1162-1163), raw degrees
+REG_ANGLE_HI = 1160         # 32-bit (1160-1161), raw = controller angle units
+REG_ANGLE_LO = 1162         # 32-bit (1162-1163), raw = controller angle units
 
 REG_STEP_ENABLE = 1135      # 16-bit, 1=enable step
 
@@ -65,6 +68,10 @@ REG_SERIAL = 4285
 
 # Special job number
 JOB_MODBUS_WORK = 221
+
+# Target type constants
+TARGET_TYPE_ANGLE = 1
+TARGET_TYPE_TORQUE = 2
 
 # Torque unit map: code -> (name, multiplier)
 UNIT_MAP: dict[int, tuple[str, int]] = {
@@ -291,8 +298,8 @@ class KilewsDevice:
         return raw / self.torque_multiplier
 
     def _decode_angle(self, raw: int) -> float:
-        """Angle values are transmitted as-is (no ×10/÷10 conversion)."""
-        return float(raw)
+        """Angle results are returned in the controller's displayed angle units."""
+        return raw / float(ANGLE_SCALE)
 
     @property
     def torque_nm(self) -> float:
@@ -492,19 +499,46 @@ class KilewsDevice:
         angle_target: float = 0.0,
         angle_min: float = 0.0,
         angle_max: float = 0.0,
+        angle_target_raw: int | None = None,
+        angle_min_raw: int | None = None,
+        angle_max_raw: int | None = None,
         speed: int = 500,
-        target_type: int = 2,
+        target_type: int = TARGET_TYPE_TORQUE,
     ) -> dict[str, Any]:
         """Execute the proven 13-step parameter write sequence.
 
         Torque values are in N·m (converted to raw via multiplier).
-        Angle values are in degrees (sent as-is).
+        Angle values are written in the controller's raw angle units unless
+        explicit raw overrides are provided.
         Speed is RPM.
         """
         with self._write_lock:
             # ensure unit is known
             self.read_unit()
             mult = self.torque_multiplier
+            print(f"[Kilews] write_all_flow: torque={torque_target}Nm({torque_min}-{torque_max}) "
+                  f"angle={angle_target}({angle_min}-{angle_max}) speed={speed} "
+                  f"type={target_type} mult={mult}", flush=True)
+            if target_type not in {TARGET_TYPE_ANGLE, TARGET_TYPE_TORQUE}:
+                return {"ok": False, "written": 0, "steps": [], "error": f"Unsupported target_type={target_type}"}
+            target_angle_raw = (
+                int(angle_target_raw)
+                if angle_target_raw is not None
+                else int(round(angle_target * ANGLE_SCALE))
+            )
+            target_torque_raw = int(round(torque_target * mult))
+            torque_hi_raw = int(round(torque_max * mult))
+            torque_lo_raw = int(round(torque_min * mult))
+            angle_hi_raw = (
+                int(angle_max_raw)
+                if angle_max_raw is not None
+                else int(round(angle_max * ANGLE_SCALE))
+            )
+            angle_lo_raw = (
+                int(angle_min_raw)
+                if angle_min_raw is not None
+                else int(round(angle_min * ANGLE_SCALE))
+            )
 
             steps: list[dict[str, Any]] = []
             errors: list[str] = []
@@ -512,6 +546,8 @@ class KilewsDevice:
             def do_write(addr: int, val: int, is32: bool, label: str) -> None:
                 item = self._write_with_verify(addr, val, is32, label)
                 steps.append(item)
+                ok = "OK" if item["writeOk"] else "FAIL"
+                print(f"[Kilews] write {label}[{addr}]: {ok} before={item.get('before')} after={item.get('after')} expected={val}", flush=True)
                 if not item["writeOk"]:
                     errors.append(f"{label}[{addr}]=MODBUS_FAIL")
 
@@ -520,21 +556,21 @@ class KilewsDevice:
 
             # 2. write all parameters to 1144-1163 buffer
             do_write(REG_TARGET_TYPE, target_type, False, "目标类型")
-            do_write(REG_TARGET_ANGLE, int(angle_target), True, "目标角度")
-            do_write(REG_TARGET_TORQUE, int(torque_target * mult), True, "目标扭矩")
+            do_write(REG_TARGET_ANGLE, target_angle_raw, True, "目标角度")
+            do_write(REG_TARGET_TORQUE, target_torque_raw, True, "目标扭矩")
             do_write(REG_SPEED, speed, False, "转速")
-            do_write(REG_TORQUE_HI, int(torque_max * mult), True, "扭矩上限")
-            do_write(REG_TORQUE_LO, int(torque_min * mult), True, "扭矩下限")
-            do_write(REG_ANGLE_HI, int(angle_max), True, "角度监控上限")
-            do_write(REG_ANGLE_LO, int(angle_min), True, "角度监控下限")
+            do_write(REG_TORQUE_HI, torque_hi_raw, True, "扭矩上限")
+            do_write(REG_TORQUE_LO, torque_lo_raw, True, "扭矩下限")
+            do_write(REG_ANGLE_HI, angle_hi_raw, True, "角度监控上限")
+            do_write(REG_ANGLE_LO, angle_lo_raw, True, "角度监控下限")
 
-            # 3. switch to MODBUS work area (loads EEPROM, may overwrite angle limits)
+            # 3. switch to MODBUS work area (tested panel flow)
             do_write(REG_SWITCH_JOB, JOB_MODBUS_WORK, False, "切工作221")
             do_write(REG_SWITCH_SEQ, 1, False, "切工序1")
 
-            # 4. re-write angle limits (overwritten by job switch)
-            angle_hi_val = int(angle_max)
-            angle_lo_val = int(angle_min)
+            # 4. re-write only angle window; this matches the previously working test panel
+            angle_hi_val = angle_hi_raw
+            angle_lo_val = angle_lo_raw
             do_write(REG_ANGLE_HI, angle_hi_val, True, "角度监控上限(补写)")
             do_write(REG_ANGLE_LO, angle_lo_val, True, "角度监控下限(补写)")
 
@@ -555,9 +591,20 @@ class KilewsDevice:
                 "angleHi": self.param_angle_hi,
                 "angleLo": self.param_angle_lo,
             },
+            "raw_values": {
+                "targetType": target_type,
+                "targetAngle": target_angle_raw,
+                "targetTorque": target_torque_raw,
+                "speed": speed,
+                "torqueHi": torque_hi_raw,
+                "torqueLo": torque_lo_raw,
+                "angleHi": angle_hi_raw,
+                "angleLo": angle_lo_raw,
+            },
             "multiplier": mult,
             "error": "; ".join(errors) if errors else None,
         }
+        print(f"[Kilews] write_all_flow done: ok={len(errors)==0} steps={len(steps)} errors={errors}", flush=True)
 
 
 # ============================================================
@@ -637,3 +684,5 @@ class MockKilewsClient:
 
     def refresh(self) -> None:
         pass
+
+

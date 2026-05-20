@@ -5,13 +5,12 @@
 
 # --- YOLO 实时推理 ---
 ultralytics>=8.0.0
-opencv-contrib-python>=4.6.0     # WeChat QRCode + cv2 图像处理
+opencv-contrib-python>=4.6.0,<5.0  # WeChat QRCode + cv2 图像处理
 numpy>=1.24
 
 # --- 设备通讯 ---
 python-snap7>=3.0.0              # Siemens S7-200 SMART PLC
 pyserial>=3.5                    # 扫码枪 (COM口)
-pymodbus>=3.0.0                  # Kilews 拧紧控制器 (Modbus TCP)
 
 # --- QR 解码 ---
 zxing-cpp>=3.0.0                 # 多格式条形码/QR解码

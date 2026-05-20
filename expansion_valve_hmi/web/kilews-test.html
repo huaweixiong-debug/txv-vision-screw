@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>奇力速拧紧枪测试</title>
+<style>
+:root { --ink: #10212b; --muted: #6b7a84; --green: #2f7d4f; --red: #b7382f; --teal: #156c72; --teal-2: #0f4e56; --paper: #f5f7f3; --card: rgba(255,255,255,0.95); --shadow: 0 8px 30px rgba(20,45,54,0.12); }
+* { box-sizing: border-box; }
+body { margin:0; min-height:100vh; font-family:"Microsoft YaHei",sans-serif; color:var(--ink); background:linear-gradient(135deg,#eef2e8 0%,#f7f2e8 55%,#e9f1ed 100%); display:flex; align-items:center; justify-content:center; }
+.card { background:var(--card); border-radius:20px; box-shadow:var(--shadow); padding:2rem; max-width:600px; width:90%; }
+h1 { margin:0 0 0.3rem; font-size:1.3rem; }
+.sub { color:var(--muted); font-size:0.82rem; margin-bottom:1.2rem; }
+.status { display:inline-block; padding:0.22rem 0.6rem; border-radius:12px; font-size:0.75rem; font-weight:700; margin-right:0.4rem; }
+.status.ok { background:#d4edda; color:var(--green); }
+.status.err { background:#f8d7da; color:var(--red); }
+.status.warn { background:#fff3cd; color:#5d3900; }
+.row { display:flex; gap:0.5rem; align-items:center; margin-bottom:0.6rem; flex-wrap:wrap; }
+.row label { font-size:0.78rem; color:var(--muted); white-space:nowrap; }
+.row strong { font-size:0.9rem; min-width:60px; }
+button { border:0; border-radius:12px; padding:0.45rem 0.8rem; font-size:0.78rem; cursor:pointer; font-weight:700; }
+button.primary { color:white; background:linear-gradient(135deg,var(--teal),var(--teal-2)); }
+button.secondary { color:var(--ink); background:#e8eef0; }
+button.danger { color:white; background:var(--red); }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:0.4rem; margin:0.8rem 0; }
+.cell { background:#f4f7f5; border-radius:10px; padding:0.5rem 0.7rem; }
+.cell span { color:var(--muted); font-size:0.7rem; }
+.cell strong { display:block; font-size:1rem; }
+.param-bar { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:end; margin:0.8rem 0; }
+.param-bar label { font-size:0.72rem; color:var(--muted); display:grid; gap:0.15rem; }
+.param-bar input { width:80px; border:1px solid var(--muted); border-radius:8px; padding:0.3rem 0.4rem; font-size:0.78rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>奇力速 KL-NTCS-M7 测试</h1>
+  <p class="sub">MODBUS TCP @ 192.168.0.105:502</p>
+  <div style="margin-bottom:1rem;">
+    <span id="connBadge" class="status warn">检查中...</span>
+    <span id="jobBadge" class="status">Job: --</span>
+    <span id="permBadge" class="status warn">未许可</span>
+  </div>
+  <div class="row">
+    <button id="connectBtn" class="primary">连接</button>
+    <button id="disconnectBtn" class="danger">断开</button>
+    <button id="refreshBtn" class="secondary">刷新</button>
+  </div>
+  <div class="grid">
+    <div class="cell"><span>扭矩 N·m</span><strong id="torqueVal">--</strong></div>
+    <div class="cell"><span>角度 °</span><strong id="angleVal">--</strong></div>
+    <div class="cell"><span>结果</span><strong id="resultVal">--</strong></div>
+    <div class="cell"><span>拧紧时间 ms</span><strong id="timeVal">--</strong></div>
+  </div>
+  <div style="font-size:0.72rem;color:var(--muted);margin-top:0.3rem;">参数快照</div>
+  <div id="paramsBox" style="font-size:0.7rem;font-family:Consolas,monospace;background:#f4f7f5;border-radius:10px;padding:0.5rem;margin-top:0.3rem;">--</div>
+  <div class="param-bar">
+    <label>目标扭矩 N·m<input id="setTorque" type="number" value="4.5" step="0.01"></label>
+    <label>扭矩下限<input id="setTorqueLo" type="number" value="4.0" step="0.01"></label>
+    <label>扭矩上限<input id="setTorqueHi" type="number" value="5.0" step="0.01"></label>
+    <label>转速 RPM<input id="setSpeed" type="number" value="500"></label>
+    <button id="writeBtn" class="primary">写入参数</button>
+  </div>
+  <div id="logBox" style="max-height:150px;overflow:auto;font-size:0.68rem;color:var(--muted);margin-top:0.6rem;border-top:1px solid #eee;padding-top:0.4rem;"></div>
+</div>
+<script>
+const BADGE = document.getElementById("connBadge");
+const JOB = document.getElementById("jobBadge");
+const PERM = document.getElementById("permBadge");
+const LOG = document.getElementById("logBox");
+
+function log(msg) { LOG.innerHTML += `<div>${new Date().toLocaleTimeString()} ${msg}</div>`; LOG.scrollTop = LOG.scrollHeight; }
+
+async function api(path, body) {
+  const opts = body ? { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) } : {};
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+async function refresh() {
+  try {
+    const s = await api("/api/status");
+    const kw = s.kilews || {};
+    BADGE.textContent = kw.connected ? "在线" : "离线";
+    BADGE.className = "status " + (kw.connected ? "ok" : "err");
+    JOB.textContent = "Job: " + (kw.current_job || "--") + " S" + (kw.current_seq || "--");
+    PERM.textContent = s.pc_outputs?.allow_tightening ? "允许拧紧" : "未许可";
+    PERM.className = "status " + (s.pc_outputs?.allow_tightening ? "ok" : "warn");
+    document.getElementById("torqueVal").textContent = kw.torque_nm != null ? kw.torque_nm.toFixed(3) : "--";
+    document.getElementById("angleVal").textContent = kw.angle_deg != null ? kw.angle_deg.toFixed(1) : "--";
+    document.getElementById("resultVal").textContent = kw.result_label || "--";
+    document.getElementById("timeVal").textContent = kw.tighten_time_ms || "--";
+    document.getElementById("paramsBox").textContent = JSON.stringify(kw.params || {}, null, 2);
+  } catch(e) { BADGE.textContent = "离线"; BADGE.className = "status err"; }
+}
+
+document.getElementById("connectBtn").addEventListener("click", async () => {
+  await api("/api/kilews/connect"); log("连接请求已发送"); refresh();
+});
+document.getElementById("disconnectBtn").addEventListener("click", async () => {
+  await api("/api/kilews/disconnect"); log("断开请求已发送"); refresh();
+});
+document.getElementById("refreshBtn").addEventListener("click", refresh);
+
+document.getElementById("writeBtn").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/kilews/write-all", {
+      torque_target_nm: Number(document.getElementById("setTorque").value),
+      torque_min_nm: Number(document.getElementById("setTorqueLo").value),
+      torque_max_nm: Number(document.getElementById("setTorqueHi").value),
+      angle_target_deg: 0,
+      angle_min_deg: 0,
+      angle_max_deg: 9999,
+      speed_rpm: Number(document.getElementById("setSpeed").value),
+      target_type: 2,
+    });
+    log("写入结果: " + JSON.stringify(r));
+    refresh();
+  } catch(e) { log("写入失败: " + e.message); }
+});
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

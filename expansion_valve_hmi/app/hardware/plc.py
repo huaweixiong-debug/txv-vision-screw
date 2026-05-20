@@ -187,12 +187,16 @@ class MockPLCClient:
     def write_outputs(self, outputs: dict[str, Any]) -> None:
         self.pc_outputs.update(outputs)
         # Also update M-bit state from outputs
-        if "m_product_ready" in outputs:
-            self.state.m_product_ready = bool(outputs["m_product_ready"])
-        if "m_tightening_ok" in outputs:
-            self.state.m_tightening_ok = bool(outputs["m_tightening_ok"])
-        if "m_scan_complete" in outputs:
-            self.state.m_scan_complete = bool(outputs["m_scan_complete"])
+        if "product_ready" in outputs:
+            self.state.m_product_ready = bool(outputs["product_ready"])
+        if "tightening_ok" in outputs:
+            self.state.m_tightening_ok = bool(outputs["tightening_ok"])
+        if "scan_complete" in outputs:
+            self.state.m_scan_complete = bool(outputs["scan_complete"])
+        if "disable_scan" in outputs:
+            self.state.m_disable_scan = bool(outputs["disable_scan"])
+        if "tightening_ng" in outputs:
+            self.state.m_tightening_ng = bool(outputs["tightening_ng"])
 
     def update_mock_inputs(self, updates: dict[str, Any]) -> PlcState:
         for key, value in updates.items():
@@ -269,6 +273,8 @@ class S7200SmartClient:
     def read_state(self) -> PlcState:
         """Read PLC inputs (M bits + V area) and return PlcState."""
         if self._snap7 is None or not self._snap7.connected:
+            self.connect()
+        if self._snap7 is None or not self._snap7.connected:
             return PlcState(last_seen="PLC disconnected")
 
         try:
@@ -291,6 +297,11 @@ class S7200SmartClient:
                 m_plc_ready=plc_ready_latched,  # M0.5 pulse latched
                 m_plc_reset=m_inputs.get("plc_reset", False),
                 m_plc_tightening_done=m_inputs.get("plc_tightening_done", False),
+                m_product_ready=bool(self.pc_outputs.get("product_ready", False)),
+                m_tightening_ok=bool(self.pc_outputs.get("tightening_ok", False)),
+                m_scan_complete=bool(self.pc_outputs.get("scan_complete", False)),
+                m_disable_scan=bool(self.pc_outputs.get("disable_scan", False)),
+                m_tightening_ng=bool(self.pc_outputs.get("tightening_ng", False)),
                 last_seen=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             return state
@@ -312,7 +323,7 @@ class S7200SmartClient:
         try:
             # Collect M-bit signals from outputs
             m_signals: dict[str, bool] = {}
-            for label in ("product_ready", "tightening_ok", "scan_complete"):
+            for label in ("product_ready", "tightening_ok", "scan_complete", "disable_scan", "tightening_ng"):
                 if label in outputs:
                     m_signals[label] = bool(outputs[label])
 

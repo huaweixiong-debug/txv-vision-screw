@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import mimetypes
 import signal
 import sys
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,12 +32,46 @@ class AppContext:
         self.storage = ProductionStorage(self.settings["data"]["database_path"])
         self.workflow = StationWorkflow(self.settings, self.storage)
         self.scanner: ScannerTcpServer | SerialScanner | None = None
+        self.last_scanner_scan_at = ""
+        self._status_cache_payload: dict[str, Any] | None = None
+        self._status_cache_at = 0.0
+        self._status_cache_ttl_s = 0.25
+        self.workflow.set_scanner_callbacks(self.scanner_trigger_start, self.scanner_trigger_stop)
         self._init_scanner()
 
     def update_settings(self, patch: dict[str, Any]) -> dict[str, Any]:
         self.settings = save_settings(deep_merge(self.settings, patch))
         self.workflow.reload_settings(self.settings)
+        self.invalidate_status_cache()
         return self.settings
+
+    def invalidate_status_cache(self) -> None:
+        self._status_cache_payload = None
+        self._status_cache_at = 0.0
+
+    def get_status_payload(self) -> dict[str, Any]:
+        now = time.monotonic()
+        if (
+            self._status_cache_payload is not None
+            and now - self._status_cache_at < self._status_cache_ttl_s
+        ):
+            return copy.deepcopy(self._status_cache_payload)
+
+        payload = self.workflow.snapshot()
+        today = today_text()
+        today_records = self.storage.list_records(limit=500, date=today, status="COMPLETED")
+        payload["recent_records"] = today_records
+        product = payload.get("settings_summary", {}).get("product_model", "")
+        today_product = [r for r in today_records if r.get("product_model") == product]
+        payload["today_stats"] = {
+            "total": len(today_records),
+            "product_total": len(today_product),
+            "product_ok": len([r for r in today_product if r.get("final_result") == "OK"]),
+            "product_model": product,
+        }
+        self._status_cache_payload = payload
+        self._status_cache_at = now
+        return copy.deepcopy(payload)
 
     # ------------------------------------------------------------------
     # Scanner
@@ -68,14 +104,75 @@ class AppContext:
             print(f"[Scanner] init failed: {exc}")
             self.scanner = None
 
+    def _stop_scanner(self) -> None:
+        if self.scanner is None:
+            return
+        try:
+            self.scanner.stop_background()
+        except Exception as exc:
+            print(f"[Scanner] stop error: {exc}")
+        self.scanner = None
+
     def _on_scanner_scan(self, code: str) -> None:
         """Callback from scanner — always update last_qr for test visibility."""
         self.workflow.last_qr = code.strip()
+        self.last_scanner_scan_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.invalidate_status_cache()
         try:
             self.workflow.scan_qr(code)
             print(f"[Scanner] QR scanned: {code[:20]}...")
         except Exception as exc:
             print(f"[Scanner] scan error: {exc}")
+
+    def scanner_status(self) -> dict[str, Any]:
+        scfg = self.settings.get("scanner", {})
+        payload: dict[str, Any] = {
+            "mode": scfg.get("mode", "serial"),
+            "configured_port": scfg.get("com_port", "COM3"),
+            "configured_baudrate": int(scfg.get("baudrate", 115200)),
+            "connected": False,
+            "last_qr": self.workflow.last_qr,
+            "last_scan_at": self.last_scanner_scan_at,
+            "available_ports": SerialScanner.available_ports(),
+        }
+        if isinstance(self.scanner, SerialScanner):
+            payload.update(self.scanner.status_dict())
+        elif isinstance(self.scanner, ScannerTcpServer):
+            payload.update({
+                "mode": "tcp_server",
+                "connected": True,
+                "host": scfg.get("host", "0.0.0.0"),
+                "port": int(scfg.get("port", 9100)),
+            })
+        else:
+            payload["last_error"] = "Scanner not initialized"
+        return payload
+
+    def scanner_trigger_start(self) -> dict[str, Any]:
+        if not isinstance(self.scanner, SerialScanner):
+            raise RuntimeError("Scanner trigger is only available in serial mode")
+        result = self.scanner.trigger_start()
+        self.invalidate_status_cache()
+        return result
+
+    def scanner_trigger_stop(self) -> dict[str, Any]:
+        if not isinstance(self.scanner, SerialScanner):
+            raise RuntimeError("Scanner trigger is only available in serial mode")
+        result = self.scanner.trigger_stop()
+        self.invalidate_status_cache()
+        return result
+
+    def scanner_reconnect(self, com_port: str | None = None, baudrate: int | None = None) -> dict[str, Any]:
+        scanner_cfg = dict(self.settings.get("scanner", {}))
+        if com_port:
+            scanner_cfg["com_port"] = str(com_port).strip()
+        if baudrate is not None:
+            scanner_cfg["baudrate"] = int(baudrate)
+        self.settings = save_settings(deep_merge(self.settings, {"scanner": scanner_cfg}))
+        self._stop_scanner()
+        self._init_scanner()
+        self.invalidate_status_cache()
+        return self.scanner_status()
 
     # ------------------------------------------------------------------
     # Shutdown
@@ -96,7 +193,7 @@ class AppContext:
             print(f"[Shutdown] camera stop error: {exc}")
         if self.scanner is not None:
             try:
-                self.scanner.stop_background()
+                self._stop_scanner()
                 print("[Shutdown] Scanner stopped")
             except Exception as exc:
                 print(f"[Shutdown] scanner stop error: {exc}")
@@ -143,6 +240,8 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/vision/latest-frame":
                 camera = self.context.workflow.camera
+                if camera and hasattr(camera, "mark_stream_requested"):
+                    camera.mark_stream_requested()
                 jpeg = camera.get_latest_jpeg() if camera else None
                 if jpeg:
                     self.send_response(HTTPStatus.OK)
@@ -186,25 +285,13 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(content)
                 return
             if parsed.path == "/api/status":
-                payload = self.context.workflow.snapshot()
-                today = today_text()
-                today_records = self.context.storage.list_records(
-                    limit=500, date=today
-                )
-                payload["recent_records"] = today_records
-                # Today stats
-                product = payload.get("settings_summary", {}).get("product_model", "")
-                today_product = [r for r in today_records if r.get("product_model") == product]
-                payload["today_stats"] = {
-                    "total": len(today_records),
-                    "product_total": len(today_product),
-                    "product_ok": len([r for r in today_product if r.get("final_result") == "OK"]),
-                    "product_model": product,
-                }
-                self.json_response(payload)
+                self.json_response(self.context.get_status_payload())
                 return
             if parsed.path == "/api/settings":
                 self.json_response(self.context.settings)
+                return
+            if parsed.path == "/api/scanner/status":
+                self.json_response(self.context.scanner_status())
                 return
             if parsed.path == "/api/automation/status":
                 wf = self.context.workflow
@@ -245,6 +332,7 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
         try:
             parsed = urlparse(self.path)
             body = self.read_json()
+            self.context.invalidate_status_cache()
             if parsed.path == "/api/login":
                 self.json_response(self.context.workflow.login(body.get("operator", ""), body.get("shift", "")))
                 return
@@ -305,6 +393,23 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/scan":
                 self.json_response(self.context.workflow.scan_qr(body.get("qr_code", "")))
+                return
+            if parsed.path == "/api/scan/skip":
+                self.json_response(self.context.workflow.skip_scan())
+                return
+            if parsed.path == "/api/scanner/trigger/start":
+                self.json_response(self.context.scanner_trigger_start())
+                return
+            if parsed.path == "/api/scanner/trigger/stop":
+                self.json_response(self.context.scanner_trigger_stop())
+                return
+            if parsed.path == "/api/scanner/reconnect":
+                self.json_response(
+                    self.context.scanner_reconnect(
+                        com_port=body.get("com_port"),
+                        baudrate=body.get("baudrate"),
+                    )
+                )
                 return
             if parsed.path == "/api/kilews/connect":
                 ok = self.context.workflow._connect_kilews()
@@ -368,7 +473,14 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/camera/connect":
                 wf = self.context.workflow
                 wf._init_camera(wf.settings)
-                self.json_response({"ok": wf.camera.connected if wf.camera else False, "connected": wf.camera.connected if wf.camera else False})
+                self.json_response({
+                    "ok": bool(wf.camera_status.get("connected")),
+                    "connected": bool(wf.camera_status.get("connected")),
+                    "is_mock": bool(wf.camera_status.get("is_mock")),
+                    "backend": wf.camera_status.get("backend", ""),
+                    "camera_ip": wf.camera_status.get("camera_ip", ""),
+                    "error": wf.camera_status.get("error", ""),
+                })
                 return
             if parsed.path == "/api/camera/disconnect":
                 wf = self.context.workflow
@@ -442,6 +554,10 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
+        if file_path.suffix in {".html", ".js", ".css"}:
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
         self.end_headers()
         self.wfile.write(content)
 

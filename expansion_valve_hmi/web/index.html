@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>膨胀阀拧紧防错追溯 HMI</title>
-    <link rel="stylesheet" href="/styles.css?v=20260515i" />
+    <link rel="stylesheet" href="/styles.css?v=20260519b" />
   </head>
   <body>
     <div class="shell">
@@ -65,8 +65,7 @@
 
           <section class="panel operator-panel">
             <div class="panel-head" data-drag-handle>
-              <h2>操作员与流程</h2>
-              <span id="operatorBadge" class="badge">未登录</span>
+              <h2>产品与操作员选择</h2>
             </div>
             <div class="operator-grid">
               <label>产品型号<select id="productSelect"></select></label>
@@ -83,10 +82,11 @@
             <div class="vision-stage">
               <div class="camera-box">
                 <img id="cameraFeed" src="" alt="" />
+                <div class="camera-transform-badge" id="productionTransformBadge" style="display:none;"></div>
               </div>
               <div class="vision-insight">
-                <div id="visionDetections" style="overflow-y:auto;flex:1;">
-                  <span style="color:var(--muted);font-size:0.72rem;">等待检测...</span>
+                <div id="visionDetections" class="vision-detections">
+                  <span class="vision-empty">等待检测...</span>
                 </div>
               </div>
             </div>
@@ -96,12 +96,6 @@
           <section class="panel plc-panel">
             <div class="panel-head" data-drag-handle>
               <h2>PLC 条件</h2>
-              <span id="plcReadyBadge" class="badge">检查中</span>
-            </div>
-            <div id="plcConnectionRow" style="display:flex;gap:0.5rem;align-items:center;padding:0.2rem 0.4rem;font-size:0.72rem;border-bottom:1px solid var(--border);margin-bottom:0.3rem;">
-              <span>PLC <strong id="plcConnText">--</strong></span>
-              <button id="plcConnectBtn" class="secondary" style="font-size:0.68rem;padding:0.12rem 0.4rem;">连接</button>
-              <button id="plcDisconnectBtn" class="ghost-danger" style="font-size:0.68rem;padding:0.12rem 0.4rem;">断开</button>
             </div>
             <div id="plcMBitsGrid" class="plc-grid"></div>
             <span class="resize-grip"></span>
@@ -135,10 +129,13 @@
               <span id="scannerLiveCode" style="color:#0f0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
               <span id="scannerLiveTime" style="color:#888;flex-shrink:0;"></span>
             </div>
-            <div class="form-row">
-              <label>二维码<input id="qrInput" placeholder="扫码枪自动填入" /></label>
-              <button id="scanBtn" class="primary">绑定二维码</button>
-              <button id="reworkBtn" class="secondary">PLC 选择返修后继续扫码</button>
+            <div class="scan-form">
+              <label class="scan-input">二维码<input id="qrInput" placeholder="扫码枪自动填入" /></label>
+              <div class="scan-actions">
+                <button id="scanBtn" class="primary">绑定二维码</button>
+                <button id="skipScanBtn" class="secondary">跳过扫码</button>
+                <button id="reworkBtn" class="secondary">返修后扫码</button>
+              </div>
             </div>
             <div id="scannerHistory" style="display:none;margin-top:0.3rem;max-height:120px;overflow-y:auto;border-top:1px solid var(--border);padding-top:0.3rem;">
               <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.2rem;">扫码记录</div>
@@ -164,7 +161,9 @@
                     <th>时间</th>
                     <th>序列号</th>
                     <th>二维码</th>
+                    <th>操作员</th>
                     <th>型号</th>
+                    <th>图片</th>
                     <th>螺栓1扭矩</th>
                     <th>螺栓1角度</th>
                     <th>螺栓2扭矩</th>
@@ -333,6 +332,7 @@
                     <th>时间</th>
                     <th>序列号</th>
                     <th>二维码</th>
+                    <th>操作员</th>
                     <th>产品型号</th>
                     <th>O型圈图片</th>
                     <th>螺丝1扭矩</th>
@@ -409,6 +409,6 @@
       </main>
     </div>
     <div id="toast" class="toast"></div>
-    <script src="/app.js?v=20260515i"></script>
+    <script src="/app.js?v=20260519b"></script>
   </body>
 </html>
