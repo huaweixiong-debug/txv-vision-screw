@@ -1561,7 +1561,6 @@ function renderRecent(records, stats) {
         <td>${escapeHtml(row.internal_serial || "")}</td>
         <td>${escapeHtml(row.qr_code || "")}</td>
         <td>${escapeHtml(row.operator || row.operator_name || "")}</td>
-        <td>${escapeHtml(row.operator || row.operator_name || "")}</td>
         <td>${escapeHtml(row.product_model || "")}</td>
         <td>${renderImageLink(row.image_path)}</td>
         <td>${asFixed(row.bolt1_torque)}</td>
