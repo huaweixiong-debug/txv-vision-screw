@@ -1697,6 +1697,7 @@ function bindEvents() {
           active_recipe_no: product.recipe_no,
         },
       });
+      await api("/api/kilews/write-params", { product_model: product.product_model });
     } catch (e) {
       console.error("Persist active product failed:", e);
     }

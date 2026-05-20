@@ -446,7 +446,7 @@ class StationWorkflow:
         self.storage.add_event(self.current_record_id, "qr.skipped", reason)
         self.state = "complete"
         self.alarm = Alarm()
-        if self.automation_enabled:
+        if self._automation_running:
             self._signal_plc_scan_complete()
         else:
             self.write_plc_outputs()
@@ -712,7 +712,7 @@ class StationWorkflow:
 
         # ---- State: complete -> immediately prepare next auto cycle ----
         elif self.state == "complete":
-            if self.automation_enabled:
+            if self._automation_running:
                 self._reset_runtime_state()
                 self.write_plc_outputs()
                 print("[Automation] Cycle complete -> next cycle ready")
@@ -775,7 +775,6 @@ class StationWorkflow:
                 plc_product_ready_sent=1,
                 coverage_confidence=round(min_ioa, 4),
             )
-        self._auto_capture("valve_covered")
         if isinstance(self.kilews, KilewsDevice):
             self._reset_tightening_tracking(_time.monotonic())
             self._prime_tightening_baseline()
@@ -974,7 +973,6 @@ class StationWorkflow:
             self._trigger_scanner_start("tightening_ok")
         elif final == "OK":
             self._complete_without_scan("QR binding disabled -> auto complete after tightening")
-        self._auto_capture("tightening_done")
         self.write_plc_outputs()
         print(f"[Automation] Tightening final: {final} → PLC M0.1={'1' if final == 'OK' else '0'}")
 
@@ -1055,7 +1053,7 @@ class StationWorkflow:
         self._automation_status["tightening_progress"] = ""
 
         # Choose start state based on automation
-        if self.automation_enabled:
+        if self._automation_running:
             self.state = "vision_wait_stable"
             print("[Workflow] Automation mode: start cycle → vision_wait_stable")
         else:
@@ -1108,7 +1106,7 @@ class StationWorkflow:
         ready = vision_ok and self.plc_ready() and self.kilews.connected
         if ready and self.state != "tightening":
             self.state = "tightening"
-            if not self.automation_enabled and isinstance(self.kilews, KilewsDevice):
+            if not self._automation_running and isinstance(self.kilews, KilewsDevice):
                 now = _time.monotonic()
                 self._reset_tightening_tracking(now)
                 self._automation_status["tightening_progress"] = "拧紧许可已满足，等待拧紧完成..."
@@ -1225,7 +1223,7 @@ class StationWorkflow:
         self.storage.add_event(self.current_record_id, "qr.skipped", "扫码已跳过")
         self.state = "complete"
         self.alarm = Alarm()
-        if self.automation_enabled:
+        if self._automation_running:
             self._signal_plc_scan_complete()
         else:
             self.write_plc_outputs()
@@ -1272,7 +1270,7 @@ class StationWorkflow:
         self.state = "complete"
         self.alarm = Alarm()
         # If automation active, signal PLC scan complete
-        if self.automation_enabled:
+        if self._automation_running:
             self._signal_plc_scan_complete()
         self.write_plc_outputs()
         return self.snapshot()
@@ -1436,7 +1434,7 @@ class StationWorkflow:
                 self.vision["o_ring_ok"] = inference.get("o_ring_ok", False)
                 self.vision["confidence"] = inference.get("confidence", 0.0)
         plc_state: PlcState = self.plc.read_state()
-        if not self.automation_enabled:
+        if not self._automation_running:
             if self.state in {"tightening", "tightening_wait"}:
                 self._poll_kilews_results(now, plc_state)
             if self.state == "tightening_eval":
