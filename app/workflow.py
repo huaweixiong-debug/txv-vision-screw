@@ -643,7 +643,7 @@ class StationWorkflow:
 
         # ---- State: idle → auto-start when automation runs ----
         if self.state == "idle":
-            if not self.automation_enabled:
+            if not self._automation_running:
                 return
             product = self.settings["station"]["active_product_model"]
             self.start_cycle(product)
