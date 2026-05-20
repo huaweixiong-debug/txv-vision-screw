@@ -136,7 +136,7 @@ class StationWorkflow:
     # ------------------------------------------------------------------
 
     def reload_settings(self, settings: dict[str, Any]) -> None:
-        was_auto = self.automation_enabled
+        was_auto = self._automation_running
         self.disable_automation()
         self.settings = settings
         self._init_kilews(settings)
@@ -182,7 +182,7 @@ class StationWorkflow:
     def _init_kilews(self, settings: dict[str, Any]) -> None:
         kcfg = settings.get("kilews", {})
         if kcfg.get("enabled"):
-            if isinstance(self.kilews, KilewsDevice) and self.kilews.modbus.connected:
+            if hasattr(self, "kilews") and isinstance(self.kilews, KilewsDevice) and self.kilews.modbus.connected:
                 return  # already connected, don't recreate
             modbus = ModbusClient(
                 ip=kcfg.get("ip", "192.168.3.10"),
@@ -193,7 +193,7 @@ class StationWorkflow:
             self.kilews = KilewsDevice(modbus)
             if kcfg.get("auto_connect"):
                 self._connect_kilews()
-        elif not isinstance(self.kilews, MockKilewsClient):
+        elif not hasattr(self, "kilews") or not isinstance(self.kilews, MockKilewsClient):
             self.kilews = MockKilewsClient()
 
     def _init_camera(self, settings: dict[str, Any]) -> None:
@@ -520,28 +520,60 @@ class StationWorkflow:
         if not isinstance(self.kilews, KilewsDevice):
             return {"ok": False, "error": "Mock 模式下不支持写入控制器"}
         speed = int(self.settings.get("kilews", {}).get("speed_rpm", 500))
-        kilews_torque_target = float(product_cfg.get("kilews_torque_target_nm", 2.0))
-        kilews_torque_min = float(product_cfg.get("kilews_torque_min_nm", 2.0))
-        kilews_torque_max = float(product_cfg.get("kilews_torque_max_nm", 5.0))
+        kilews_torque_target = float(product_cfg.get("kilews_torque_target_nm", product_cfg.get("torque_target_nm", 2.0)))
+        kilews_torque_min = float(product_cfg.get("kilews_torque_min_nm", product_cfg.get("torque_min_nm", 2.0)))
+        kilews_torque_max = float(product_cfg.get("kilews_torque_max_nm", product_cfg.get("torque_max_nm", 5.0)))
         kilews_angle_target = float(
             product_cfg.get(
                 "kilews_angle_target_deg",
                 product_cfg.get("angle_target_deg", 90.0),
             )
         )
-        kilews_angle_target_raw = int(product_cfg.get("kilews_angle_target_raw", 900))
-        kilews_angle_min_raw = int(product_cfg.get("kilews_angle_min_raw", 700))
-        kilews_angle_max_raw = int(product_cfg.get("kilews_angle_max_raw", 12000))
+        kilews_angle_min = float(product_cfg.get("kilews_angle_min_deg", product_cfg.get("angle_min_deg", 70.0)))
+        kilews_angle_max = float(product_cfg.get("kilews_angle_max_deg", product_cfg.get("angle_max_deg", 120.0)))
+        kilews_angle_target_raw = product_cfg.get("kilews_angle_target_raw")
+        kilews_angle_min_raw = product_cfg.get("kilews_angle_min_raw")
+        kilews_angle_max_raw = product_cfg.get("kilews_angle_max_raw")
+        print(
+            "[Kilews] write params request:",
+            {
+                "product_model": product_cfg.get("product_model"),
+                "recipe_no": product_cfg.get("recipe_no"),
+                "torque_target_nm": kilews_torque_target,
+                "torque_min_nm": kilews_torque_min,
+                "torque_max_nm": kilews_torque_max,
+                "angle_target_deg": kilews_angle_target,
+                "angle_min_deg": kilews_angle_min,
+                "angle_max_deg": kilews_angle_max,
+                "angle_target_raw_override": kilews_angle_target_raw,
+                "angle_min_raw_override": kilews_angle_min_raw,
+                "angle_max_raw_override": kilews_angle_max_raw,
+                "speed_rpm": speed,
+                "target_type": TARGET_TYPE_TORQUE,
+            },
+        )
         result = self.kilews.write_all_flow(
             torque_target=kilews_torque_target,
             torque_min=kilews_torque_min,
             torque_max=kilews_torque_max,
             angle_target=kilews_angle_target,
-            angle_target_raw=kilews_angle_target_raw,
-            angle_min_raw=kilews_angle_min_raw,
-            angle_max_raw=kilews_angle_max_raw,
+            angle_min=kilews_angle_min,
+            angle_max=kilews_angle_max,
+            angle_target_raw=int(kilews_angle_target_raw) if kilews_angle_target_raw is not None else None,
+            angle_min_raw=int(kilews_angle_min_raw) if kilews_angle_min_raw is not None else None,
+            angle_max_raw=int(kilews_angle_max_raw) if kilews_angle_max_raw is not None else None,
             speed=speed,
             target_type=TARGET_TYPE_TORQUE,
+        )
+        print(
+            "[Kilews] write params result:",
+            {
+                "product_model": product_cfg.get("product_model"),
+                "ok": result.get("ok"),
+                "error": result.get("error"),
+                "raw_values": result.get("raw_values"),
+                "steps": result.get("steps"),
+            },
         )
         self.storage.add_event(
             self.current_record_id,

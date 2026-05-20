@@ -516,6 +516,9 @@ class KilewsDevice:
             # ensure unit is known
             self.read_unit()
             mult = self.torque_multiplier
+            print(f"[Kilews] write_all_flow: torque={torque_target}Nm({torque_min}-{torque_max}) "
+                  f"angle={angle_target}({angle_min}-{angle_max}) speed={speed} "
+                  f"type={target_type} mult={mult}", flush=True)
             if target_type not in {TARGET_TYPE_ANGLE, TARGET_TYPE_TORQUE}:
                 return {"ok": False, "written": 0, "steps": [], "error": f"Unsupported target_type={target_type}"}
             target_angle_raw = (
@@ -543,6 +546,8 @@ class KilewsDevice:
             def do_write(addr: int, val: int, is32: bool, label: str) -> None:
                 item = self._write_with_verify(addr, val, is32, label)
                 steps.append(item)
+                ok = "OK" if item["writeOk"] else "FAIL"
+                print(f"[Kilews] write {label}[{addr}]: {ok} before={item.get('before')} after={item.get('after')} expected={val}", flush=True)
                 if not item["writeOk"]:
                     errors.append(f"{label}[{addr}]=MODBUS_FAIL")
 
@@ -599,6 +604,7 @@ class KilewsDevice:
             "multiplier": mult,
             "error": "; ".join(errors) if errors else None,
         }
+        print(f"[Kilews] write_all_flow done: ok={len(errors)==0} steps={len(steps)} errors={errors}", flush=True)
 
 
 # ============================================================

@@ -1683,7 +1683,17 @@ function bindEvents() {
   $("#refreshBtn").addEventListener("click", loadStatus);
 
   $("#productSelect").addEventListener("change", async () => {
-    const product = (settings.products || []).find((item) => item.product_model === $("#productSelect").value);
+    let products = settings.products || [];
+    try {
+      const collectedProducts = collectProductRows();
+      if (collectedProducts.length > 0) {
+        products = collectedProducts;
+        settings.products = collectedProducts;
+      }
+    } catch (e) {
+      console.error("Collect product rows failed:", e);
+    }
+    const product = products.find((item) => item.product_model === $("#productSelect").value);
     if (!product) return;
     settings.station.active_product_model = product.product_model;
     settings.station.active_recipe_no = product.recipe_no;
@@ -1696,16 +1706,12 @@ function bindEvents() {
           active_product_model: product.product_model,
           active_recipe_no: product.recipe_no,
         },
+        products: products,
       });
       await api("/api/kilews/write-params", { product_model: product.product_model });
     } catch (e) {
       console.error("Persist active product failed:", e);
-    }
-
-    try {
-      await api("/api/kilews/write-params", { product_model: product.product_model });
-    } catch (e) {
-      console.error("Write Kilews params failed:", e);
+      return;
     }
   });
 

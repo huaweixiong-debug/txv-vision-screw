@@ -5,7 +5,7 @@
 
 # --- YOLO 实时推理 ---
 ultralytics>=8.0.0
-opencv-contrib-python>=4.6.0     # WeChat QRCode + cv2 图像处理
+opencv-contrib-python>=4.6.0,<5.0  # WeChat QRCode + cv2 图像处理
 numpy>=1.24
 
 # --- 设备通讯 ---
