@@ -1610,7 +1610,7 @@ function renderRecordRows(records) {
 function fmtTime(val) {
   if (!val) return "";
   var s = String(val).replace("T", " ");
-  return s.length >= 16 ? s.slice(5, 16) : s;
+  return s.length >= 16 ? s.slice(0, 16) : s;
 }
 
 function renderImageLink(path) {
@@ -1681,6 +1681,12 @@ function bindEvents() {
   );
 
   $("#refreshBtn").addEventListener("click", loadStatus);
+
+  $("#operatorInput").addEventListener("change", async () => {
+    try {
+      await api("/api/login", { operator: $("#operatorInput").value, shift: "白班" });
+    } catch (e) { /* ignore */ }
+  });
 
   $("#productSelect").addEventListener("change", async () => {
     let products = settings.products || [];
@@ -1810,15 +1816,24 @@ function bindEvents() {
 
   $("#queryRecordsBtn").addEventListener("click", async () => {
     try {
-      const keyword = encodeURIComponent($("#recordKeyword").value);
-      const status = encodeURIComponent($("#recordStatus").value);
-      const payload = await api(`/api/records?keyword=${keyword}&status=${status}&limit=200`);
+      const params = new URLSearchParams();
+      const keyword = $("#recordKeyword").value.trim();
+      const status = $("#recordStatus").value;
+      const dateStart = $("#recordDateStart").value;
+      const dateEnd = $("#recordDateEnd").value;
+      if (keyword) params.set("keyword", keyword);
+      if (status) params.set("status", status);
+      if (dateStart) params.set("date_start", dateStart);
+      if (dateEnd) params.set("date_end", dateEnd);
+      params.set("limit", "200");
+      const payload = await api(`/api/records?${params.toString()}`);
       renderRecordRows(payload.records);
-      toast("鏌ヨ瀹屾垚");
+      toast("查询完成");
     } catch (error) {
       toast(error.message);
     }
   });
+
 
   $("#kilewsConnectBtn").addEventListener("click", async () => {
     try {
@@ -2095,10 +2110,11 @@ function checkConnections(snapshot) {
   setInterval(() => loadStatus().catch(() => setBadge("#connectionBadge", "连接异常", false)), 1500);
 }
 
-// Graceful shutdown on browser close
+// NOTE: Do NOT call /api/shutdown on beforeunload.
+// It would kill the scanner and PLC connections server-side,
+// breaking the automation workflow on a simple page refresh.
 window.addEventListener("beforeunload", () => {
   releaseCameraPollLease();
-  navigator.sendBeacon("/api/shutdown");
 });
 
 boot().catch((error) => toast(error.message));

@@ -1,43 +1,44 @@
-"""Check remote HMI status"""
-import paramiko, time
+import paramiko, sys
 
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 c.connect("100.79.19.71", username="a", password="0000", timeout=10)
 
-test = """
-import urllib.request, json
-try:
-    resp = urllib.request.urlopen("http://127.0.0.1:8010/api/status", timeout=10)
-    data = json.loads(resp.read().decode())
-    s = data.get("state", "?")
-    sl = data.get("state_label", "?")
-    plc = data.get("plc", {})
-    auto = data.get("automation", {})
-    print(f"State: {s} ({sl})")
-    print(f"PLC connected: {auto.get('plc_connected', '?')}")
-    print(f"Automation active: {auto.get('active', '?')}")
-    print(f"Operator: {data.get('operator', '?')}")
-    kilews = data.get("kilews", {})
-    print(f"Kilews connected: {kilews.get('connected', '?')}")
-    resp2 = urllib.request.urlopen("http://127.0.0.1:8010/api/settings", timeout=5)
-    settings = json.loads(resp2.read().decode())
-    sc = settings.get("scanner", {})
-    print(f"Scanner mode: {sc.get('mode', '?')}, port: {sc.get('com_port', '?')}")
-    pc = settings.get("plc", {})
-    print(f"PLC settings: enabled={pc.get('enabled')}, ip={pc.get('ip')}")
-except Exception as e:
-    print(f"Error: {e}")
+# Check C: drive workflow.py for key patterns
+script = r"""import os
+path = r"C:\Users\A\expansion_valve_hmi\app\workflow.py"
+with open(path, "r", encoding="utf-8") as f:
+    lines = f.readlines()
+print(f"workflow.py: {len(lines)} lines")
+
+# Check for SKIP NG (should NOT exist after revert)
+for i, line in enumerate(lines, 1):
+    if "SKIP NG" in line:
+        print(f"  SKIP NG found at line {i}")
+    if "result == \"NG\"" in line and "SKIP" in line:
+        print(f"  NG skip at line {i}")
+
+# Also check app.js
+js_path = r"C:\Users\A\expansion_valve_hmi\web\app.js"
+with open(js_path, "r", encoding="utf-8") as f:
+    js = f.read()
+print(f"\napp.js: {len(js)} bytes")
+
+# Check for the broken pattern
+import re
+broken = re.findall(r'operator: \.value', js)
+print(f"Broken '.value' patterns: {len(broken)}")
 """
 
 sftp = c.open_sftp()
-with sftp.file(r"C:\Users\A\expansion_valve_hmi\check_status.py", "w") as f:
-    f.write(test)
+with sftp.file(r"C:\Users\A\expansion_valve_hmi\_check_code.py", "w") as f:
+    f.write(script)
 sftp.close()
 
-i, o, e = c.exec_command(r'python C:\Users\A\expansion_valve_hmi\check_status.py', timeout=15)
-print(o.read().decode("gbk", errors="ignore"))
-err = e.read().decode("gbk", errors="ignore").strip()
-if err:
-    print("STDERR:", err[:500])
+i, o, e = c.exec_command(r"python C:\Users\A\expansion_valve_hmi\_check_code.py", timeout=15)
+sys.stdout.buffer.write(b"--- Code check ---\n")
+sys.stdout.buffer.write(o.read())
+sys.stdout.buffer.write(b"\n--- stderr ---\n")
+sys.stdout.buffer.write(e.read())
+
 c.close()

@@ -130,7 +130,8 @@ class ProductionStorage:
                 pass  # column already exists
 
     def next_serial(self, product_model: str, station_id: str) -> str:
-        serial_date = datetime.now().strftime("%Y%m%d")
+        now = datetime.now()
+        serial_date = now.strftime("%Y%m%d")
         with self._lock, self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -165,7 +166,7 @@ class ProductionStorage:
         bolt_count: int,
         model_version: str,
     ) -> dict[str, Any]:
-        internal_serial = self.next_serial(product_model, station_id)
+        internal_serial = f"TMP-{product_model}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         stamp = now_text()
         with self.connect() as conn:
             cur = conn.execute(
@@ -199,6 +200,24 @@ class ProductionStorage:
         record = self.get_record(record_id)
         assert record is not None
         return record
+
+    def assign_serial(self, record_id: int, product_model: str, station_id: str, operator: str = "") -> str:
+        """Assign the next daily counter-based serial to a record (only for OK parts)."""
+        serial = self.next_serial(product_model, station_id)
+        stamp = now_text()
+        with self.connect() as conn:
+            if operator:
+                conn.execute(
+                    "UPDATE records SET internal_serial = ?, created_at = ?, product_model = ?, operator = ? WHERE id = ?",
+                    (serial, stamp, product_model, operator, record_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE records SET internal_serial = ?, created_at = ? WHERE id = ?",
+                    (serial, stamp, record_id),
+                )
+        self.add_event(record_id, "record.serial_assigned", f"分配序列号 {serial}")
+        return serial
 
     def get_record(self, record_id: int) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -301,6 +320,8 @@ class ProductionStorage:
         status: str = "",
         product_model: str = "",
         date: str = "",
+        date_start: str = "",
+        date_end: str = "",
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 500))
         where: list[str] = []
@@ -312,6 +333,12 @@ class ProductionStorage:
         if date:
             where.append("substr(created_at, 1, 10) = ?")
             params.append(date)
+        if date_start:
+            where.append("created_at >= ?")
+            params.append(date_start)
+        if date_end:
+            where.append("created_at <= ?")
+            params.append(date_end + " 23:59:59")
         if status:
             where.append("status = ?")
             params.append(status)

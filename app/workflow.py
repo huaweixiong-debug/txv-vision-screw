@@ -910,7 +910,11 @@ class StationWorkflow:
                 print(f"[Kilews] bolt_no={bolt_no} count_delta={count_delta} next_waits={bolt_no}", flush=True)
                 if 1 <= bolt_no <= len(self.bolts):
                     bolt = self.bolts[bolt_no - 1]
-                    if bolt.result == "WAIT" or bolt.torque_nm is None or bolt.angle_deg is None:
+                    if result == "NG":
+                        self._last_kilews_signature = result_signature
+                        self._tightening_last_progress_at = now
+                        print(f"[Kilews] SKIP NG bolt{bolt_no}: torque={torque:.3f} angle={angle:.1f} — 不记录，等待重新拧紧", flush=True)
+                    elif bolt.result == "WAIT" or bolt.torque_nm is None or bolt.angle_deg is None:
                         self._last_kilews_signature = result_signature
                         self._tightening_last_progress_at = now
                         bolt.torque_nm = torque
@@ -984,6 +988,13 @@ class StationWorkflow:
             self.state = "ng_wait_rework"
             self.alarm = Alarm("PART_NG", "拧紧结果 NG，请在 PLC 侧选择返修/放行")
         else:
+            if self.current_record_id is not None:
+                self.storage.assign_serial(
+                    self.current_record_id,
+                    self.settings["station"]["active_product_model"],
+                    self.settings["station"]["station_id"],
+                    operator=self.operator,
+                )
             self.state = "pending_scan" if self._qr_binding_required() else "complete"
             self.alarm = Alarm()
 
@@ -1193,6 +1204,13 @@ class StationWorkflow:
             self.state = "ng_wait_rework"
             self.alarm = Alarm("PART_NG", "拧紧结果 NG，请在 PLC 侧选择返修/放行")
         else:
+            if self.current_record_id is not None:
+                self.storage.assign_serial(
+                    self.current_record_id,
+                    self.settings["station"]["active_product_model"],
+                    self.settings["station"]["station_id"],
+                    operator=self.operator,
+                )
             self.state = "pending_scan" if self._qr_binding_required() else "complete"
             self.alarm = Alarm()
         self.current_record = self.storage.update_record(
@@ -1420,6 +1438,11 @@ class StationWorkflow:
         angle = self.kilews._decode_angle(int(self.kilews.angle_raw or 0))
         result = "OK" if result_code in (4, 5, 6) else "NG"
 
+        if result == "NG":
+            self._last_kilews_signature = result_signature
+            self._tightening_last_progress_at = now
+            print(f"[Kilews] SKIP NG bolt{bolt_no} (fallback): torque={torque:.3f} angle={angle:.1f} — 不记录，等待重新拧紧", flush=True)
+            return
         bolt.torque_nm = round(float(torque), 2)
         bolt.angle_deg = round(float(angle), 2)
         bolt.result = result

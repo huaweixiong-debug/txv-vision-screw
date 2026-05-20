@@ -24,7 +24,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$procs = Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*run.py*--port %PORT%*' }; foreach($p in $procs){ try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch {} }" >nul 2>nul
 
 echo [2/4] Starting HMI service...
-start "ExpansionValveHMI" /min "%PYTHON_EXE%" run.py --host %HOST% --port %PORT%
+start "ExpansionValveHMI" /min "%PYTHON_EXE%" run.py --host %HOST% --port %PORT% >> "runtime\hmi_stdout.log" 2>> "runtime\hmi_stderr.log"
 
 echo [3/4] Waiting for service...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^

@@ -149,15 +149,22 @@ class AppContext:
         return payload
 
     def scanner_trigger_start(self) -> dict[str, Any]:
+        if self.scanner is None:
+            print("[Scanner] trigger start: scanner is None, re-initializing...", flush=True)
+            self._init_scanner()
         if not isinstance(self.scanner, SerialScanner):
-            raise RuntimeError("Scanner trigger is only available in serial mode")
+            scanner_type = type(self.scanner).__name__ if self.scanner is not None else "None"
+            raise RuntimeError(f"Scanner trigger is only available in serial mode (got: {scanner_type})")
         result = self.scanner.trigger_start()
         self.invalidate_status_cache()
         return result
 
     def scanner_trigger_stop(self) -> dict[str, Any]:
+        if self.scanner is None:
+            self._init_scanner()
         if not isinstance(self.scanner, SerialScanner):
-            raise RuntimeError("Scanner trigger is only available in serial mode")
+            scanner_type = type(self.scanner).__name__ if self.scanner is not None else "None"
+            raise RuntimeError(f"Scanner trigger is only available in serial mode (got: {scanner_type})")
         result = self.scanner.trigger_stop()
         self.invalidate_status_cache()
         return result
@@ -321,6 +328,8 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
                     keyword=query.get("keyword", [""])[0],
                     status=query.get("status", [""])[0],
                     product_model=query.get("product_model", [""])[0],
+                    date_start=query.get("date_start", [""])[0],
+                    date_end=query.get("date_end", [""])[0],
                 )
                 self.json_response({"records": records})
                 return

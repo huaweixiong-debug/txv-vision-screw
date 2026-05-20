@@ -36,8 +36,11 @@ sftp.close()
 launcher = (
     'import subprocess, sys, os\r\n'
     'os.chdir(r"' + TARGET + '")\r\n'
+    'os.makedirs("runtime", exist_ok=True)\r\n'
     'flags = 0x01000000 | 0x00000008\r\n'
-    'with open("stdout.log", "w") as out, open("stderr.log", "w") as err:\r\n'
+    'with open("runtime/hmi_stdout.log", "a") as out, open("runtime/hmi_stderr.log", "a") as err:\r\n'
+    '    out.write("\\n=== HMI restarted " + __import__("datetime").datetime.now().isoformat() + " ===\\n")\r\n'
+    '    out.flush()\r\n'
     '    p = subprocess.Popen([sys.executable, "-u", "run.py", "--host", "0.0.0.0", "--port", "8010"],\r\n'
     '        stdout=out, stderr=err, stdin=subprocess.DEVNULL, creationflags=flags)\r\n'
     '    print("PID=" + str(p.pid))\r\n'
