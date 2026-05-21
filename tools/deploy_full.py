@@ -4,7 +4,7 @@ import paramiko, time, os
 HOST = "100.79.19.71"
 USER = "a"
 PASS = "0000"
-TARGET = r"C:\Users\A\expansion_valve_hmi"
+TARGET = r"D:\expansion_valve_hmi"
 
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -12,6 +12,10 @@ c.connect(HOST, username=USER, password=PASS, timeout=10)
 
 c.exec_command("taskkill /F /IM python.exe 2>nul", timeout=5)
 time.sleep(3)
+
+# Ensure target directories exist
+for sub in ["", "\\app", "\\app\\hardware", "\\web", "\\config", "\\runtime"]:
+    c.exec_command(f'if not exist "{TARGET}{sub}" mkdir "{TARGET}{sub}"', timeout=5)
 
 SRC = r"S:\expansion_valve_hmi"
 files = [
@@ -23,6 +27,8 @@ files = [
     "web/index.html", "web/app.js", "web/styles.css",
     "web/scanner-test.html", "web/kilews-test.html",
     "config/default_settings.json", "requirements.txt",
+    "run.py", "start_hmi.bat", "启动HMI.bat",
+    "README_USER_MANUAL.md",
 ]
 
 sftp = c.open_sftp()
