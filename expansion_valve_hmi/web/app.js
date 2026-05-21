@@ -1610,7 +1610,7 @@ function renderRecordRows(records) {
 function fmtTime(val) {
   if (!val) return "";
   var s = String(val).replace("T", " ");
-  return s.length >= 16 ? s.slice(5, 16) : s;
+  return s.length >= 16 ? s.slice(0, 16) : s;
 }
 
 function renderImageLink(path) {
@@ -1816,15 +1816,24 @@ function bindEvents() {
 
   $("#queryRecordsBtn").addEventListener("click", async () => {
     try {
-      const keyword = encodeURIComponent($("#recordKeyword").value);
-      const status = encodeURIComponent($("#recordStatus").value);
-      const payload = await api(`/api/records?keyword=${keyword}&status=${status}&limit=200`);
+      const params = new URLSearchParams();
+      const keyword = $("#recordKeyword").value.trim();
+      const status = $("#recordStatus").value;
+      const dateStart = $("#recordDateStart").value;
+      const dateEnd = $("#recordDateEnd").value;
+      if (keyword) params.set("keyword", keyword);
+      if (status) params.set("status", status);
+      if (dateStart) params.set("date_start", dateStart);
+      if (dateEnd) params.set("date_end", dateEnd);
+      params.set("limit", "200");
+      const payload = await api(`/api/records?${params.toString()}`);
       renderRecordRows(payload.records);
-      toast("鏌ヨ瀹屾垚");
+      toast("查询完成");
     } catch (error) {
       toast(error.message);
     }
   });
+
 
   $("#kilewsConnectBtn").addEventListener("click", async () => {
     try {
@@ -1872,12 +1881,21 @@ function bindEvents() {
 
   $("#exportDailyBtn").addEventListener("click", async () => {
     await runAction(async () => {
-      const payload = await api("/api/export/daily", {});
+      const body = {};
+      const ds = $("#recordDateStart").value;
+      const de = $("#recordDateEnd").value;
+      const kw = $("#recordKeyword").value.trim();
+      const st = $("#recordStatus").value;
+      if (ds) body.date_start = ds;
+      if (de) body.date_end = de;
+      if (kw) body.keyword = kw;
+      if (st) body.status = st;
+      const payload = await api("/api/export/daily", body);
       $("#exportPath").textContent = `宸插鍑猴細${payload.export_path}`;
     }, "\u65e5\u62a5 Excel \u5df2\u5bfc\u51fa");
   });
 
-  $("#captureBtn").addEventListener("click", async () => {
+$("#captureBtn").addEventListener("click", async () => {
     await runAction(async () => {
       const payload = await api("/api/image/capture", {
         product_model: $("#productSelect").value,
@@ -2101,10 +2119,11 @@ function checkConnections(snapshot) {
   setInterval(() => loadStatus().catch(() => setBadge("#connectionBadge", "连接异常", false)), 1500);
 }
 
-// Graceful shutdown on browser close
+// NOTE: Do NOT call /api/shutdown on beforeunload.
+// It would kill the scanner and PLC connections server-side,
+// breaking the automation workflow on a simple page refresh.
 window.addEventListener("beforeunload", () => {
   releaseCameraPollLease();
-  navigator.sendBeacon("/api/shutdown");
 });
 
 boot().catch((error) => toast(error.message));

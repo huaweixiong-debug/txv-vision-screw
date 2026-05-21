@@ -149,15 +149,22 @@ class AppContext:
         return payload
 
     def scanner_trigger_start(self) -> dict[str, Any]:
+        if self.scanner is None:
+            print("[Scanner] trigger start: scanner is None, re-initializing...", flush=True)
+            self._init_scanner()
         if not isinstance(self.scanner, SerialScanner):
-            raise RuntimeError("Scanner trigger is only available in serial mode")
+            scanner_type = type(self.scanner).__name__ if self.scanner is not None else "None"
+            raise RuntimeError(f"Scanner trigger is only available in serial mode (got: {scanner_type})")
         result = self.scanner.trigger_start()
         self.invalidate_status_cache()
         return result
 
     def scanner_trigger_stop(self) -> dict[str, Any]:
+        if self.scanner is None:
+            self._init_scanner()
         if not isinstance(self.scanner, SerialScanner):
-            raise RuntimeError("Scanner trigger is only available in serial mode")
+            scanner_type = type(self.scanner).__name__ if self.scanner is not None else "None"
+            raise RuntimeError(f"Scanner trigger is only available in serial mode (got: {scanner_type})")
         result = self.scanner.trigger_stop()
         self.invalidate_status_cache()
         return result
@@ -321,6 +328,8 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
                     keyword=query.get("keyword", [""])[0],
                     status=query.get("status", [""])[0],
                     product_model=query.get("product_model", [""])[0],
+                    date_start=query.get("date_start", [""])[0],
+                    date_end=query.get("date_end", [""])[0],
                 )
                 self.json_response({"records": records})
                 return
@@ -507,8 +516,14 @@ class HmiRequestHandler(BaseHTTPRequestHandler):
                 })
                 return
             if parsed.path == "/api/export/daily":
-                export_date = body.get("date") or today_text()
-                path = self.context.storage.export_daily(self.context.settings["data"]["export_root"], export_date)
+                export_root = self.context.settings["data"]["export_root"]
+                path = self.context.storage.export_filtered(
+                    export_root,
+                    date_start=body.get("date_start") or "",
+                    date_end=body.get("date_end") or "",
+                    keyword=body.get("keyword") or "",
+                    status=body.get("status") or "",
+                )
                 self.context.workflow.plc.write_outputs({"excel_export_ok": True, "excel_export_failed": False})
                 self.json_response({"export_path": str(path)})
                 return

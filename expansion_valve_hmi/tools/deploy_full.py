@@ -4,7 +4,7 @@ import paramiko, time, os
 HOST = "100.79.19.71"
 USER = "a"
 PASS = "0000"
-TARGET = r"C:\Users\A\expansion_valve_hmi"
+TARGET = r"D:\expansion_valve_hmi"
 
 c = paramiko.SSHClient()
 c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -12,6 +12,10 @@ c.connect(HOST, username=USER, password=PASS, timeout=10)
 
 c.exec_command("taskkill /F /IM python.exe 2>nul", timeout=5)
 time.sleep(3)
+
+# Ensure target directories exist
+for sub in ["", "\\app", "\\app\\hardware", "\\web", "\\config", "\\runtime"]:
+    c.exec_command(f'if not exist "{TARGET}{sub}" mkdir "{TARGET}{sub}"', timeout=5)
 
 SRC = r"S:\expansion_valve_hmi"
 files = [
@@ -23,6 +27,7 @@ files = [
     "web/index.html", "web/app.js", "web/styles.css",
     "web/scanner-test.html", "web/kilews-test.html",
     "config/default_settings.json", "requirements.txt",
+    "run.py", "start_hmi.bat", "启动HMI.bat",
 ]
 
 sftp = c.open_sftp()
@@ -36,8 +41,11 @@ sftp.close()
 launcher = (
     'import subprocess, sys, os\r\n'
     'os.chdir(r"' + TARGET + '")\r\n'
+    'os.makedirs("runtime", exist_ok=True)\r\n'
     'flags = 0x01000000 | 0x00000008\r\n'
-    'with open("stdout.log", "w") as out, open("stderr.log", "w") as err:\r\n'
+    'with open("runtime/hmi_stdout.log", "a") as out, open("runtime/hmi_stderr.log", "a") as err:\r\n'
+    '    out.write("\\n=== HMI restarted " + __import__("datetime").datetime.now().isoformat() + " ===\\n")\r\n'
+    '    out.flush()\r\n'
     '    p = subprocess.Popen([sys.executable, "-u", "run.py", "--host", "0.0.0.0", "--port", "8010"],\r\n'
     '        stdout=out, stderr=err, stdin=subprocess.DEVNULL, creationflags=flags)\r\n'
     '    print("PID=" + str(p.pid))\r\n'

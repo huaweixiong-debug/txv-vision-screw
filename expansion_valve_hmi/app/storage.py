@@ -130,7 +130,8 @@ class ProductionStorage:
                 pass  # column already exists
 
     def next_serial(self, product_model: str, station_id: str) -> str:
-        serial_date = datetime.now().strftime("%Y%m%d")
+        now = datetime.now()
+        serial_date = now.strftime("%Y%m%d")
         with self._lock, self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -165,7 +166,7 @@ class ProductionStorage:
         bolt_count: int,
         model_version: str,
     ) -> dict[str, Any]:
-        internal_serial = self.next_serial(product_model, station_id)
+        internal_serial = f"TMP-{product_model}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         stamp = now_text()
         with self.connect() as conn:
             cur = conn.execute(
@@ -199,6 +200,24 @@ class ProductionStorage:
         record = self.get_record(record_id)
         assert record is not None
         return record
+
+    def assign_serial(self, record_id: int, product_model: str, station_id: str, operator: str = "") -> str:
+        """Assign the next daily counter-based serial to a record (only for OK parts)."""
+        serial = self.next_serial(product_model, station_id)
+        stamp = now_text()
+        with self.connect() as conn:
+            if operator:
+                conn.execute(
+                    "UPDATE records SET internal_serial = ?, created_at = ?, product_model = ?, operator = ? WHERE id = ?",
+                    (serial, stamp, product_model, operator, record_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE records SET internal_serial = ?, created_at = ? WHERE id = ?",
+                    (serial, stamp, record_id),
+                )
+        self.add_event(record_id, "record.serial_assigned", f"分配序列号 {serial}")
+        return serial
 
     def get_record(self, record_id: int) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -301,6 +320,8 @@ class ProductionStorage:
         status: str = "",
         product_model: str = "",
         date: str = "",
+        date_start: str = "",
+        date_end: str = "",
     ) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 500))
         where: list[str] = []
@@ -312,6 +333,12 @@ class ProductionStorage:
         if date:
             where.append("substr(created_at, 1, 10) = ?")
             params.append(date)
+        if date_start:
+            where.append("created_at >= ?")
+            params.append(date_start)
+        if date_end:
+            where.append("created_at <= ?")
+            params.append(date_end + " 23:59:59")
         if status:
             where.append("status = ?")
             params.append(status)
@@ -343,13 +370,22 @@ class ProductionStorage:
             ).fetchall()
         return [row_to_dict(row) for row in rows if row is not None]
 
-    def export_daily(self, export_root: str, date_text_value: str | None = None) -> Path:
-        export_date = date_text_value or today_text()
-        rows = self.records_for_date(export_date)
+    def export_filtered(self, export_root: str, *,
+                        date_start: str = "", date_end: str = "",
+                        keyword: str = "", status: str = "") -> Path:
+        rows = self.list_records(
+            limit=10000, date_start=date_start, date_end=date_end,
+            keyword=keyword, status=status,
+        )
+        export_label = today_text()
+        if date_start:
+            export_label = date_start
+            if date_end and date_end != date_start:
+                export_label = f"{date_start}_{date_end}"
         root = Path(export_root)
-        month_dir = root / export_date[:7]
+        month_dir = root / export_label[:7]
         month_dir.mkdir(parents=True, exist_ok=True)
-        output_path = month_dir / f"{export_date}.xlsx"
+        output_path = month_dir / f"{export_label}.xlsx"
         headers = [
             "序号",
             "状态",
@@ -414,7 +450,7 @@ class ProductionStorage:
                     row.get("qr_bind_status") or "",
                     row.get("alarm_code") or "",
                     row.get("alarm_message") or "",
-                    row.get("image_path") or "",
+                    _excel_link(row.get("image_path") or ""),
                     row.get("stability_duration_ms") if row.get("stability_duration_ms") is not None else "",
                     row.get("coverage_confidence") if row.get("coverage_confidence") is not None else "",
                     row.get("expansion_valve_detected") if row.get("expansion_valve_detected") is not None else "",
@@ -442,6 +478,18 @@ def xml_text(value: Any) -> str:
     return html.escape(str(value), quote=True)
 
 
+def xml_attr(value: str) -> str:
+    return str(value).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+class _excel_link:
+    """Excel hyperlink cell — formula: HYPERLINK(url, label)."""
+    __slots__ = ("url", "label")
+    def __init__(self, url: str, label: str = "图片") -> None:
+        self.url = url
+        self.label = label
+
+
 def sheet_xml(matrix: list[list[Any]]) -> str:
     rows_xml: list[str] = []
     for r_index, row in enumerate(matrix, start=1):
@@ -450,6 +498,10 @@ def sheet_xml(matrix: list[list[Any]]) -> str:
             cell_ref = f"{excel_col(c_index)}{r_index}"
             if value is None:
                 cells.append(f'<c r="{cell_ref}"/>')
+            elif isinstance(value, _excel_link):
+                url = xml_attr(value.url)
+                label = xml_text(value.label)
+                cells.append(f'<c r="{cell_ref}" t="str"><f>HYPERLINK("{url}","{label}")</f><v>{label}</v></c>')
             elif isinstance(value, (int, float)) and not isinstance(value, bool):
                 cells.append(f'<c r="{cell_ref}"><v>{value}</v></c>')
             else:

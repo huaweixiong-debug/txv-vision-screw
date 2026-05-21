@@ -345,6 +345,11 @@ def capture_frame(
         if img is not None:
             if transform:
                 img = _apply_transform(img, transform)
+            # Timestamp overlay (bottom-right)
+            ts = now.strftime("%Y-%m-%d %H:%M:%S")
+            h, w = img.shape[:2]
+            (tw, th), _ = cv2.getTextSize(ts, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+            cv2.putText(img, ts, (w - tw - 10, h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.imwrite(str(output), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
             return output
 

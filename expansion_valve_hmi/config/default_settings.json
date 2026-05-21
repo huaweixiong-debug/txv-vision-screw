@@ -156,7 +156,7 @@
   "data": {
     "database_path": "runtime/production.db",
     "export_root": "D:\\膨胀阀装配数据",
-    "image_root": "data/images",
-    "dataset_root": "data/datasets"
+    "image_root": "D:\\膨胀阀装配数据\\images",
+    "dataset_root": "D:\\膨胀阀装配数据\\datasets"
   }
 }

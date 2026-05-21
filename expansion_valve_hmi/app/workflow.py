@@ -988,6 +988,13 @@ class StationWorkflow:
             self.state = "ng_wait_rework"
             self.alarm = Alarm("PART_NG", "拧紧结果 NG，请在 PLC 侧选择返修/放行")
         else:
+            if self.current_record_id is not None:
+                self.storage.assign_serial(
+                    self.current_record_id,
+                    self.settings["station"]["active_product_model"],
+                    self.settings["station"]["station_id"],
+                    operator=self.operator,
+                )
             self.state = "pending_scan" if self._qr_binding_required() else "complete"
             self.alarm = Alarm()
 
@@ -1197,6 +1204,13 @@ class StationWorkflow:
             self.state = "ng_wait_rework"
             self.alarm = Alarm("PART_NG", "拧紧结果 NG，请在 PLC 侧选择返修/放行")
         else:
+            if self.current_record_id is not None:
+                self.storage.assign_serial(
+                    self.current_record_id,
+                    self.settings["station"]["active_product_model"],
+                    self.settings["station"]["station_id"],
+                    operator=self.operator,
+                )
             self.state = "pending_scan" if self._qr_binding_required() else "complete"
             self.alarm = Alarm()
         self.current_record = self.storage.update_record(
